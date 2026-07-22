@@ -9,75 +9,64 @@ services:
     working_dir: /app
 
     volumes:
-      - joseplaneja_app_data:/app
-      # Cache do npm — acelera reinstalações entre reinícios
+      # /app é EFÊMERO de propósito: clona e instala do zero a cada deploy,
+      # evitando node_modules velho/quebrado (causa do "vite: Permission denied").
+      # Cache do npm — acelera as reinstalações sem persistir código.
       - joseplaneja_npm_cache:/root/.npm
+
+    # Variáveis do backend passadas direto pelo ambiente (o dotenv lê do process.env,
+    # sem precisar gerar arquivo .env). Preencha DB_PASS e JWT_SECRET.
+    environment:
+      NODE_ENV: production
+      PORT: "3333"
+      FRONTEND_URL: https://joseplaneja.aleftec.com.br
+      DB_HOST: 62.72.63.137
+      DB_PORT: "5432"
+      DB_USER: root
+      DB_PASS: COLOQUE_A_SENHA_DO_BANCO
+      DB_NAME: finansmart
+      DB_SCHEMA: dev
+      BILLING_ENABLED: "false"
+      JWT_SECRET: TROQUE_POR_UM_SEGREDO_FORTE
+      JWT_EXPIRES_IN: 7d
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      GOOGLE_CALLBACK_URL: https://joseplaneja.aleftec.com.br/auth/google/callback
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
 
     entrypoint: ["bash", "-lc"]
 
     command:
       - |
-        set -e
+        set -eo pipefail
 
         echo "📦 Instalando git e curl..."
         apt-get update -y
         apt-get install -y --no-install-recommends git curl
         git --version
 
-        mkdir -p /app
+        echo "📥 Clonando repositório (checkout limpo)..."
+        cd /
+        rm -rf /app
+        git clone --depth 1 https://github.com/queziajesuinod/finansmart.git /app
         cd /app
+        test -d server || { echo "❌ Repositório sem a pasta server/. Verifique o push no GitHub."; exit 1; }
+        echo "✅ Repositório clonado (server/ presente)"
 
-        if [ ! -d .git ]; then
-          echo "📥 Clonando repositório..."
-          rm -rf /app/* /app/.[!.]* 2>/dev/null || true
-          git clone https://github.com/queziajesuinod/finansmart.git .
-        else
-          echo "📢 Atualizando código..."
-          git fetch origin main
-          git reset --hard origin/main
-        fi
-
-        echo "🧩 Gerando server/.env..."
-        cat > /app/server/.env <<'EOF'
-        NODE_ENV=production
-        PORT=3333
-        FRONTEND_URL=https://joseplaneja.aleftec.com.br
-
-        # Banco PostgreSQL
-        DB_HOST=62.72.63.137
-        DB_PORT=5432
-        DB_USER=root
-        DB_PASS=COLOQUE_A_SENHA_DO_BANCO
-        DB_NAME=finansmart
-        DB_SCHEMA=dev
-
-        # Cobrança (false = modo teste, todos liberados)
-        BILLING_ENABLED=false
-
-        # Autenticação
-        JWT_SECRET=TROQUE_POR_UM_SEGREDO_FORTE
-        JWT_EXPIRES_IN=7d
-
-        # Google OAuth (opcional — deixe vazio para desativar)
-        GOOGLE_CLIENT_ID=
-        GOOGLE_CLIENT_SECRET=
-        GOOGLE_CALLBACK_URL=https://joseplaneja.aleftec.com.br/auth/google/callback
-
-        # Stripe (Fase 2 — opcional)
-        STRIPE_SECRET_KEY=
-        STRIPE_WEBHOOK_SECRET=
-        EOF
-        echo "✅ server/.env criado"
+        echo "🧹 Removendo node_modules/dist commitados (evita binários sem permissão)..."
+        rm -rf /app/node_modules /app/dist /app/server/node_modules
 
         echo "🏗️  Build do frontend (API na mesma origem)..."
+        cd /app
         npm install
-        VITE_API_URL="" npm run build
+        VITE_API_URL="" node node_modules/vite/bin/vite.js build
 
         echo "🔧 Instalando backend + migrations..."
         cd /app/server
         npm install
-        npx sequelize-cli db:migrate
-        npx sequelize-cli db:seed:all || echo "⚠️ seeders já aplicados (ok)"
+        node node_modules/sequelize-cli/lib/sequelize db:migrate
+        node node_modules/sequelize-cli/lib/sequelize db:seed:all || echo "⚠️ seeders já aplicados (ok)"
 
         echo "🚀 Subindo a API (serve o frontend em /app/dist)..."
         npm start
@@ -131,5 +120,4 @@ networks:
     external: true
 
 volumes:
-  joseplaneja_app_data:
   joseplaneja_npm_cache:

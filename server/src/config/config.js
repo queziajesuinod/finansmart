@@ -43,11 +43,13 @@ module.exports = {
   test: useUrl
     ? { use_env_variable: "DATABASE_URL", ...common }
     : { ...fromParts(), database: `${process.env.DB_NAME || "finansmart"}_test` },
-  production: {
-    use_env_variable: "DATABASE_URL",
-    ...common,
-    dialectOptions: {
-      ssl: { require: true, rejectUnauthorized: false },
-    },
-  },
+  // Produção: se houver DATABASE_URL (banco gerenciado em nuvem), usa com SSL.
+  // Senão, usa as variáveis DB_* separadas (ex: Postgres em VPS, sem SSL).
+  production: useUrl
+    ? {
+        use_env_variable: "DATABASE_URL",
+        ...common,
+        dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
+      }
+    : fromParts(),
 };

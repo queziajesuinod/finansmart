@@ -1,0 +1,17 @@
+# Dependências (nunca commitar — reinstaladas no deploy)
+node_modules/
+server/node_modules/
+
+# Build do frontend (gerado no deploy)
+dist/
+
+# Segredos / ambiente
+.env
+server/.env
+*.local
+
+# Logs e temporários
+*.log
+npm-debug.log*
+.DS_Store
+docker-compose.yml
