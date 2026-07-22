@@ -1,0 +1,135 @@
+version: "3.8"
+
+services:
+  joseplaneja-app:
+    image: node:20
+    networks:
+      - network_public
+
+    working_dir: /app
+
+    volumes:
+      - joseplaneja_app_data:/app
+      # Cache do npm — acelera reinstalações entre reinícios
+      - joseplaneja_npm_cache:/root/.npm
+
+    entrypoint: ["bash", "-lc"]
+
+    command:
+      - |
+        set -e
+
+        echo "📦 Instalando git e curl..."
+        apt-get update -y
+        apt-get install -y --no-install-recommends git curl
+        git --version
+
+        mkdir -p /app
+        cd /app
+
+        if [ ! -d .git ]; then
+          echo "📥 Clonando repositório..."
+          rm -rf /app/* /app/.[!.]* 2>/dev/null || true
+          git clone https://github.com/queziajesuinod/finansmart.git .
+        else
+          echo "📢 Atualizando código..."
+          git fetch origin main
+          git reset --hard origin/main
+        fi
+
+        echo "🧩 Gerando server/.env..."
+        cat > /app/server/.env <<'EOF'
+        NODE_ENV=production
+        PORT=3333
+        FRONTEND_URL=https://joseplaneja.aleftec.com.br
+
+        # Banco PostgreSQL
+        DB_HOST=62.72.63.137
+        DB_PORT=5432
+        DB_USER=root
+        DB_PASS=COLOQUE_A_SENHA_DO_BANCO
+        DB_NAME=finansmart
+        DB_SCHEMA=dev
+
+        # Cobrança (false = modo teste, todos liberados)
+        BILLING_ENABLED=false
+
+        # Autenticação
+        JWT_SECRET=TROQUE_POR_UM_SEGREDO_FORTE
+        JWT_EXPIRES_IN=7d
+
+        # Google OAuth (opcional — deixe vazio para desativar)
+        GOOGLE_CLIENT_ID=
+        GOOGLE_CLIENT_SECRET=
+        GOOGLE_CALLBACK_URL=https://joseplaneja.aleftec.com.br/auth/google/callback
+
+        # Stripe (Fase 2 — opcional)
+        STRIPE_SECRET_KEY=
+        STRIPE_WEBHOOK_SECRET=
+        EOF
+        echo "✅ server/.env criado"
+
+        echo "🏗️  Build do frontend (API na mesma origem)..."
+        npm install
+        VITE_API_URL="" npm run build
+
+        echo "🔧 Instalando backend + migrations..."
+        cd /app/server
+        npm install
+        npx sequelize-cli db:migrate
+        npx sequelize-cli db:seed:all || echo "⚠️ seeders já aplicados (ok)"
+
+        echo "🚀 Subindo a API (serve o frontend em /app/dist)..."
+        npm start
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s   # 3 min de tolerância pro 1º boot (clone + build + migrations)
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 20s
+      update_config:
+        order: start-first
+        failure_action: rollback
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+
+        - "traefik.http.routers.joseplaneja.rule=Host(`joseplaneja.aleftec.com.br`)"
+        - "traefik.http.routers.joseplaneja.entrypoints=websecure"
+        - "traefik.http.routers.joseplaneja.tls=true"
+        - "traefik.http.routers.joseplaneja.tls.certresolver=letsencryptresolver"
+
+        # CORS
+        - "traefik.http.middlewares.joseplaneja-cors.headers.accesscontrolalloworiginlist=*"
+        - "traefik.http.middlewares.joseplaneja-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE"
+        - "traefik.http.middlewares.joseplaneja-cors.headers.accesscontrolallowheaders=Origin,X-Requested-With,Content-Type,Accept,Authorization"
+        - "traefik.http.middlewares.joseplaneja-cors.headers.accesscontrolallowcredentials=true"
+        - "traefik.http.routers.joseplaneja.middlewares=joseplaneja-cors@docker"
+
+        - "traefik.http.services.joseplaneja.loadbalancer.server.port=3333"
+        - "traefik.http.services.joseplaneja.loadbalancer.passHostHeader=true"
+
+networks:
+  network_public:
+    external: true
+
+volumes:
+  joseplaneja_app_data:
+  joseplaneja_npm_cache:

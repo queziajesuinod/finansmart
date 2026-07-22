@@ -2,7 +2,9 @@
 // Cliente da API do FinançaSmart. Guarda o JWT no localStorage e converte
 // os dados entre o formato do backend e o formato usado pelo frontend.
 
-const API_URL = (import.meta.env && import.meta.env.VITE_API_URL) || "http://127.0.0.1:3333";
+// Em produção o backend serve o próprio frontend, então VITE_API_URL="" (mesma origem).
+// Em dev, sem a variável, aponta para o backend local.
+const API_URL = (import.meta.env && import.meta.env.VITE_API_URL !== undefined) ? import.meta.env.VITE_API_URL : "http://127.0.0.1:3333";
 const TOKEN_KEY = "finansmart:token";
 
 export function getToken() { return localStorage.getItem(TOKEN_KEY); }
