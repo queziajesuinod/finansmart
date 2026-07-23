@@ -1,9 +1,10 @@
 // @ts-nocheck
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { C, CATEGORIES, todayStr, fmt, genId, tint } from "../../lib/constants";
-import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt } from "../ui";
+import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { parseFatura, aplicarRegras, merchantKey } from "../../lib/parseFatura";
-import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight } from "../../lib/icons.jsx";
+import { authConfig, aiImportFatura } from "../../lib/api";
+import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight, Sparkles } from "../../lib/icons.jsx";
 
 export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, setCartoes, parcelados, setParcelados, categoryRules, setCategoryRules, cardProfiles, setTab }) {
   const [loading, setLoading] = useState(false);
@@ -13,8 +14,50 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   const [texto, setTexto] = useState("");
   const [meta, setMeta] = useState({ banco: "", nome: "", limite: "", vencimento: "", mesRef: "" });
   const [totalFatura, setTotalFatura] = useState(null);
+  const [aiOn, setAiOn] = useState(false);
+  const [loadingIA, setLoadingIA] = useState(false);
   const ref = useRef();
   const mf = (k) => (e) => setMeta((p) => ({ ...p, [k]: e.target.value }));
+
+  // Descobre se a leitura com IA está habilitada no servidor (chave configurada).
+  useEffect(() => { authConfig().then((cfg) => setAiOn(Boolean(cfg && cfg.aiImport))).catch(() => {}); }, []);
+
+  // Mês/ano de referência para a IA (1-12). Prioriza o campo, senão detecta, senão a tela.
+  function refParaIA() {
+    let ym = meta.mesRef || detectarMesRef(texto || "", items);
+    if (ym && /^\d{4}-\d{2}$/.test(ym)) return { refYear: parseInt(ym.slice(0, 4), 10), refMonth: parseInt(ym.slice(5, 7), 10) };
+    return { refYear: year, refMonth: monthIdx + 1 };
+  }
+
+  // Reforço: manda o texto já extraído para a IA e reprocessa as compras.
+  async function lerComIA() {
+    if (!texto || texto.trim().length < 20) { setMsg("Não há texto para analisar. Envie um PDF ou cole o texto da fatura primeiro."); return; }
+    const { refYear, refMonth } = refParaIA();
+    setLoadingIA(true); setMsg("Analisando a fatura com IA (isso envia o texto ao servidor)...");
+    try {
+      const r = await aiImportFatura({ texto, refYear, refMonth });
+      if (!r || !Array.isArray(r.compras) || !r.compras.length) { setMsg("A IA não encontrou compras neste texto. Confira o texto extraído e tente novamente."); setLoadingIA(false); return; }
+      const itens = r.compras.map((c) => ({ ...c, portador: c.portador || "Titular", final: c.final || "" }));
+      itens.totalOficial = r.totalOficial || null;
+      mostrarResultado(itens, texto);
+      // Dados do cartão que a IA identificou (banco, limite, vencimento) têm
+      // prioridade — preenchem mesmo por cima do que o parser local achou.
+      if (r.cartao) {
+        setMeta((m) => ({
+          ...m,
+          banco: r.cartao.banco || m.banco,
+          nome: r.cartao.nome || m.nome,
+          limite: r.cartao.limite ? String(r.cartao.limite) : m.limite,
+          vencimento: r.cartao.vencimentoDia ? vencDoDia(r.cartao.vencimentoDia) : m.vencimento,
+        }));
+      }
+    } catch (e) {
+      if (e.code === "ai_disabled") setMsg("A leitura com IA não está configurada no servidor.");
+      else if (e.status === 429) setMsg("O serviço de IA atingiu o limite de uso agora. Aguarde um minuto e tente de novo.");
+      else setMsg("Não consegui ler com IA agora. Você ainda pode revisar/corrigir a lista manualmente. " + (e.message || ""));
+    }
+    setLoadingIA(false);
+  }
 
   // Data de vencimento sintética a partir do dia (só o dia é usado depois).
   const vencDeProfile = (p) => p.vencimento || (p.vencimentoDia ? `2000-01-${String(p.vencimentoDia).padStart(2, "0")}` : "");
@@ -91,6 +134,30 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     return null;
   }
 
+  // Dia do vencimento (só o dia; ex: "Vencimento: 25/06/2026" → 25).
+  function detectarVencDia(txt) {
+    const t = txt || "";
+    let m = t.match(/vencimento[^0-9]{0,20}(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
+    if (m) return parseInt(m[1], 10);
+    m = t.match(/vencimento[^0-9a-z]{0,20}(\d{1,2})\s+[a-z]{3}/i); // "08 JUL 2026" (Nubank)
+    if (m) return parseInt(m[1], 10);
+    return null;
+  }
+  // Limite total de crédito impresso na fatura.
+  function detectarLimite(txt) {
+    const t = (txt || "").replace(/\s+/g, " ");
+    const m = t.match(/limite total de cr[eé]dito[^0-9]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})/i) ||
+              t.match(/limite total[^0-9]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+    if (m) return parseFloat(m[1].replace(/\./g, "").replace(",", "."));
+    return null;
+  }
+  // Data sintética a partir do dia (só o dia é usado depois). Jan tem 31 dias → seguro.
+  const vencDoDia = (dia) => (dia ? `2000-01-${String(dia).padStart(2, "0")}` : "");
+  // Extrai só o dia de uma data "YYYY-MM-DD" (para o campo mostrar apenas o dia).
+  const diaDoVenc = (v) => { const m = /^\d{4}-\d{2}-(\d{2})$/.exec(v || ""); return m ? String(parseInt(m[1], 10)) : ""; };
+  // Ao digitar o dia (1-31), guarda como data sintética em meta.vencimento.
+  const setVencDia = (e) => { const d = parseInt(e.target.value, 10); setMeta((m) => ({ ...m, vencimento: d >= 1 && d <= 31 ? vencDoDia(d) : "" })); };
+
   function mostrarResultado(parsed, txtCompleto) {
     const totalOficial = parsed.totalOficial || acharTotalFatura(txtCompleto || "");
     // Aplica as categorias que o usuário já ensinou em importações anteriores.
@@ -114,6 +181,14 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     // Sempre tenta preencher o banco pelo texto do PDF (mesmo sem perfil cadastrado).
     const bancoDet = detectarBanco(txtCompleto || "");
     if (bancoDet) setMeta((m) => ({ ...m, banco: m.banco || bancoDet, nome: m.nome || bancoDet }));
+    // Limite e dia de vencimento impressos na fatura (preenche se ainda vazio).
+    const limDet = detectarLimite(txtCompleto || "");
+    const vencDia = detectarVencDia(txtCompleto || "");
+    setMeta((m) => ({
+      ...m,
+      limite: m.limite || (limDet ? String(limDet) : ""),
+      vencimento: m.vencimento || vencDoDia(vencDia),
+    }));
     const parc = comRegras.filter((i) => i.parcelas > 1).length;
     const somaExtraida = comRegras.reduce((s, i) => s + (parseFloat(i.valor) || 0), 0);
     const aprendidas = comRegras.filter((i) => { const k = merchantKey(i.descricao); return k && categoryRules && categoryRules[k]; }).length;
@@ -122,7 +197,8 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     if (totalOficial && Math.abs(totalOficial - somaExtraida) > 1) {
       const dif = totalOficial - somaExtraida;
       if (dif > 0) {
-        aviso = ` O total oficial da fatura é ${fmt(totalOficial)} (será usado no app). As compras lidas somam ${fmt(somaExtraida)} — a diferença de ${fmt(Math.abs(dif))} pode ser compras que o leitor não detalhou, mas o valor total do cartão estará correto.`;
+        const dicaIA = aiOn ? ` Para ler as compras que faltaram, toque em "Melhorar leitura com IA".` : "";
+        aviso = ` O total oficial da fatura é ${fmt(totalOficial)} (será usado no app). As compras lidas somam ${fmt(somaExtraida)} — a diferença de ${fmt(Math.abs(dif))} pode ser compras que o leitor não detalhou, mas o valor total do cartão estará correto.${dicaIA}`;
       } else {
         aviso = ` As compras lidas somam ${fmt(somaExtraida)}, mas a fatura informa ${fmt(totalOficial)}. Confira a lista e remova duplicatas antes de salvar.`;
       }
@@ -180,27 +256,30 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
           else bandas.push({ y: frag.y, itens: [frag] });
         });
 
+        const montar = (arr) => arr.slice().sort((a, b2) => a.x - b2.x).map((o) => o.s).join(" ").replace(/\s{2,}/g, " ").trim();
+
+        // Detecta layout de 2 colunas (ex: Itaú): datas dd/mm na metade direita.
         const reTokenData = /^\d{2}\/\d{2}$/;
-        bandas.forEach((b) => {
-          const its = b.itens.sort((a, b2) => a.x - b2.x);
-          const montar = (arr) => arr.map((o) => o.s).join(" ").replace(/\s{2,}/g, " ").trim();
-          const idxData = [];
-          its.forEach((it, i) => { if (reTokenData.test(it.s)) idxData.push(i); });
-          let corte = null;
-          for (let k = 1; k < idxData.length; k++) {
-            if (its[idxData[k]].x > W * 0.42) { corte = its[idxData[k]].x; break; }
-          }
-          if (corte != null) {
-            const esq = its.filter((it) => it.x < corte - 5);
-            const dir = its.filter((it) => it.x >= corte - 5);
-            const tE = montar(esq), tD = montar(dir);
-            if (tE) fullText += tE + "\n";
-            if (tD) fullText += tD + "\n";
-          } else {
-            const t = montar(its);
-            if (t) fullText += t + "\n";
-          }
-        });
+        const xDatasDir = [];
+        bandas.forEach((b) => b.itens.forEach((it) => { if (reTokenData.test(it.s) && it.x > W * 0.5) xDatasDir.push(it.x); }));
+        const duasColunas = xDatasDir.length >= 3;
+        const corte = duasColunas ? Math.min.apply(null, xDatasDir) - 10 : null;
+
+        if (duasColunas) {
+          // Emite a COLUNA ESQUERDA inteira (de cima p/ baixo) e depois a DIREITA.
+          // Assim cada compra fica seguida da sua própria linha de categoria —
+          // essencial para faturas onde a categoria vem abaixo (Itaú).
+          const esqLinhas = [], dirLinhas = [];
+          bandas.forEach((b) => {
+            const tE = montar(b.itens.filter((it) => it.x < corte));
+            const tD = montar(b.itens.filter((it) => it.x >= corte));
+            if (tE) esqLinhas.push(tE);
+            if (tD) dirLinhas.push(tD);
+          });
+          fullText += esqLinhas.join("\n") + "\n" + dirLinhas.join("\n") + "\n";
+        } else {
+          bandas.forEach((b) => { const t = montar(b.itens); if (t) fullText += t + "\n"; });
+        }
       }
       if (!fullText.trim()) { setMsg("O PDF não tem texto selecionável (parece ser uma imagem escaneada). Tente enviar o PDF original gerado pelo app/site do banco, ou digite as compras na opção \"Colar texto\"."); setLoading(false); e.target.value = ""; return; }
 
@@ -373,6 +452,18 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
         )}
 
         {msg && <div style={{ marginTop: 12, padding: "9px 12px", background: "var(--fill)", borderRadius: 9, fontSize: 12, color: C.subtle, lineHeight: 1.6 }}>{msg}</div>}
+
+        {aiOn && texto && !loading && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+            <Btn variant="ghost" onClick={lerComIA} disabled={loadingIA} style={{ width: "100%" }}>
+              <IcoTxt Icon={Sparkles}>{loadingIA ? "Analisando com IA..." : "Melhorar leitura com IA"}</IcoTxt>
+            </Btn>
+            <p style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.6, display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <Lightbulb size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>Use quando o total não bater ou a leitura ficar incompleta. Envia <strong>só o texto</strong> extraído (o PDF não sai do seu aparelho) para uma IA que não guarda seus dados.</span>
+            </p>
+          </div>
+        )}
       </Card>
 
       {items.length > 0 && (
@@ -401,8 +492,8 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
             <Field label="Banco / Bandeira"><Inp placeholder="Ex: CAIXA, Nubank..." value={meta.banco} onChange={mf("banco")} /></Field>
             <Field label="Nome do cartão (apelido)"><Inp placeholder="Ex: Visa Infinite" value={meta.nome} onChange={mf("nome")} /></Field>
-            <Field label="Limite total (R$)"><Inp type="number" placeholder="Ex: 12200" value={meta.limite} onChange={mf("limite")} /></Field>
-            <Field label="Dia de vencimento (todo mês)"><Inp type="date" value={meta.vencimento} onChange={mf("vencimento")} /></Field>
+            <Field label="Limite total (R$)"><MoneyInput placeholder="Ex: 12.200,00" value={meta.limite} onChange={mf("limite")} /></Field>
+            <Field label="Dia de vencimento (todo mês)"><Inp type="number" min={1} max={31} placeholder="Ex: 25" value={diaDoVenc(meta.vencimento)} onChange={setVencDia} /></Field>
           </div>
           {meta.vencimento && <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><Calendar size={12} /> Vence todo dia {new Date(meta.vencimento + "T12:00:00").getDate()} de cada mês.</div>}
           {(() => { const portadores = [...new Set(items.map((i) => i.portador).filter(Boolean))]; return portadores.length > 1 ? (
@@ -420,7 +511,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
             <div key={idx} style={{ background: "var(--fill-2)", borderRadius: 11, padding: "11px 13px", marginBottom: 8, border: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                 <Field label="Descrição" style={{ flex: 1, minWidth: 150 }}><Inp value={it.descricao} onChange={(e) => setItems((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))} /></Field>
-                <Field label="Valor R$" style={{ width: 90 }}><Inp type="number" value={it.valor} onChange={(e) => setItems((p) => p.map((x, i) => (i === idx ? { ...x, valor: e.target.value } : x)))} /></Field>
+                <Field label="Valor R$" style={{ width: 100 }}><MoneyInput value={it.valor} onChange={(e) => setItems((p) => p.map((x, i) => (i === idx ? { ...x, valor: e.target.value } : x)))} /></Field>
                 <Field label="Data" style={{ width: 130 }}><Inp type="date" value={it.data} onChange={(e) => setItems((p) => p.map((x, i) => (i === idx ? { ...x, data: e.target.value } : x)))} /></Field>
                 <Field label="Categoria" style={{ width: 140 }}>
                   <Sel value={it.categoria} onChange={(e) => setItems((p) => p.map((x, i) => (i === idx ? { ...x, categoria: e.target.value } : x)))}>

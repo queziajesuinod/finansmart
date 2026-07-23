@@ -9,7 +9,7 @@ import {
   Trophy, Siren, ChartColumn, ShoppingCart, BanknoteArrowDown, FilePlus,
   ScrollText, Search, WalletCards, Component,
   Undo2, CircleCheck, TriangleAlert, SquareCheck, Square, Flag, Calendar,
-  Lock, User, PartyPopper, CircleUser, KeyRound,
+  Lock, User, PartyPopper, CircleUser, KeyRound, Sparkles,
 } from "lucide-react";
 
 const TAB = {
@@ -40,7 +40,7 @@ export {
   Trophy, Siren, ChartColumn, ShoppingCart, BanknoteArrowDown, FilePlus,
   ScrollText, Search, WalletCards, Component, Package,
   Undo2, CircleCheck, TriangleAlert, SquareCheck, Square, Flag, Calendar,
-  Lock, User, FileText, PartyPopper, CircleUser, KeyRound,
+  Lock, User, FileText, PartyPopper, CircleUser, KeyRound, Sparkles,
 };
 
 // (FileText já é importado acima para a aba "importar")

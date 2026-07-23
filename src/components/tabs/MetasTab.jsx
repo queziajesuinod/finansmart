@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState } from "react";
 import { C, today, fmt, fmtPct, genId } from "../../lib/constants";
-import { Card, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt } from "../ui";
+import { Card, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { X, Trophy, Plus, PartyPopper } from "../../lib/icons.jsx";
 
 export default function MetasTab({ goals, setGoals }) {
@@ -19,8 +19,8 @@ export default function MetasTab({ goals, setGoals }) {
         <STitle><IcoTxt Icon={Trophy}>Nova meta</IcoTxt></STitle>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="Nome" span={2}><Inp placeholder="Ex: Reserva de emergência, Viagem..." value={form.nome} onChange={f("nome")} /></Field>
-          <Field label="Valor alvo (R$)"><Inp type="number" placeholder="0,00" value={form.alvo} onChange={f("alvo")} /></Field>
-          <Field label="Já guardado (R$)"><Inp type="number" placeholder="0,00" value={form.atual} onChange={f("atual")} /></Field>
+          <Field label="Valor alvo (R$)"><MoneyInput placeholder="0,00" value={form.alvo} onChange={f("alvo")} /></Field>
+          <Field label="Já guardado (R$)"><MoneyInput placeholder="0,00" value={form.atual} onChange={f("atual")} /></Field>
           <Field label="Prazo" span={2}><Inp type="date" value={form.prazo} onChange={f("prazo")} /></Field>
         </div>
         <Btn onClick={add} style={{ width: "100%", marginTop: 12 }}><IcoTxt Icon={Plus}>Adicionar meta</IcoTxt></Btn>
@@ -53,7 +53,7 @@ export default function MetasTab({ goals, setGoals }) {
               <div style={{ fontSize: 12, color: C.muted }}>{pct < 100 ? <>Faltam <strong style={{ color: C.text }}>{fmt(resto)}</strong>{meses > 0 ? <> · <strong style={{ color: cor }}>{fmt(mens)}/mês</strong></> : ""}</> : <strong style={{ color: C.emerald, display: "inline-flex", alignItems: "center", gap: 5 }}><PartyPopper size={13} /> Alcançada!</strong>}</div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <span style={{ fontSize: 10, color: C.muted }}>Atualizar:</span>
-                <input type="number" value={g.atual} onChange={(e) => setGoals(goals.map((x) => (x.id === g.id ? { ...x, atual: parseFloat(e.target.value) || 0 } : x)))} style={{ width: 85, padding: "5px 8px", background: "var(--fill)", border: `1px solid ${C.border}`, borderRadius: 7, color: C.text, fontSize: 12, outline: "none" }} />
+                <MoneyInput value={g.atual} onChange={(e) => setGoals(goals.map((x) => (x.id === g.id ? { ...x, atual: parseFloat(e.target.value) || 0 } : x)))} style={{ width: 85, padding: "5px 8px", borderRadius: 7, fontSize: 12 }} />
               </div>
             </div>
           </Card>

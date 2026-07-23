@@ -1,6 +1,53 @@
 // @ts-nocheck
+import { useState, useEffect } from "react";
 import { SearchX } from "lucide-react";
 import { C, tint } from "../lib/constants";
+
+// ─── Valor monetário (formata BR "1.234,56" enquanto digita) ──────────────
+// Formata o que o usuário digita (vírgula = decimal) em "1.234,56".
+function fmtDigitandoBR(str) {
+  let s = String(str ?? "").replace(/[^\d,]/g, "");
+  const i = s.indexOf(",");
+  let intPart, decPart = null;
+  if (i >= 0) { intPart = s.slice(0, i).replace(/,/g, ""); decPart = s.slice(i + 1).replace(/,/g, "").slice(0, 2); }
+  else intPart = s;
+  intPart = intPart.replace(/^0+(?=\d)/, "");
+  const intFmt = intPart === "" ? (decPart != null ? "0" : "") : intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return decPart != null ? `${intFmt},${decPart}` : intFmt;
+}
+// Display BR "1.234,56" → número limpo "1234.56" (para o resto do app).
+function brParaNumStr(brStr) {
+  return String(brStr ?? "").replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
+}
+// Valor guardado ("1234.56" | número) → display BR "1.234,56".
+function numParaBR(v) {
+  if (v === "" || v == null) return "";
+  let s = String(v).replace(/[^\d.,]/g, "");
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  if (s === "" || s === ".") return "";
+  const [intRaw, decRaw] = s.split(".");
+  const intPart = (intRaw || "").replace(/^0+(?=\d)/, "");
+  if (intPart === "" && (decRaw == null || decRaw === "")) return "";
+  const intFmt = (intPart || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return decRaw != null && decRaw !== "" ? `${intFmt},${decRaw.slice(0, 2)}` : intFmt;
+}
+const _floatDe = (v) => { const n = parseFloat(String(v ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
+
+// Drop-in dos inputs de valor: onChange recebe e.target.value já como número
+// limpo ("1234.56"), então o código que faz parseFloat(...) continua igual.
+export function MoneyInput({ value, onChange, style = {}, ...p }) {
+  const [display, setDisplay] = useState(() => numParaBR(value));
+  useEffect(() => {
+    if (_floatDe(brParaNumStr(display)) !== _floatDe(value)) setDisplay(numParaBR(value));
+  }, [value]);
+  function handle(e) {
+    const f = fmtDigitandoBR(e.target.value);
+    setDisplay(f);
+    onChange && onChange({ target: { value: brParaNumStr(f) } });
+  }
+  return <input {...p} type="text" inputMode="decimal" value={display} onChange={handle}
+    style={{ width: "100%", padding: "10px 13px", background: C.fill, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box", ...style }} />;
+}
 
 export function Card({ children, style = {} }) {
   return <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "18px 18px", boxShadow: "var(--shadow-sm)", ...style }}>{children}</div>;

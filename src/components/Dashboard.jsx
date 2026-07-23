@@ -98,13 +98,25 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     return s + (pago < e.parcelas ? calcPMT(e.valorContratado, e.taxa, e.parcelas) : 0);
   }, 0), [emprestimos]);
 
-  const parcelasCartaoMes = useMemo(() => parcelados.reduce((s, p) => {
-    const ini = new Date(p.dataCompra + "T12:00:00");
-    const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1);
+  // Parcelas do mês vindas da aba Parcelados. IMPORTANTE: se a parcela já está
+  // numa fatura de cartão importada DESTE mês (o total da fatura já a inclui),
+  // não somamos de novo — evita contar em dobro. Nos meses sem fatura
+  // (retroativos/futuros) a parcela conta normalmente como projeção.
+  const parcelasCartaoMes = useMemo(() => {
+    const mesRefStr = `${year}-${monthIdx}`;
+    const cartoesMes = (cartoes || []).filter((c) => c.mesRef === mesRefStr);
     const ref = new Date(year, monthIdx, 1);
     const refFim = new Date(year, monthIdx + 1, 0);
-    return s + ((ini <= refFim && fim >= ref) ? p.valorParcela : 0);
-  }, 0), [parcelados, year, monthIdx]);
+    return parcelados.reduce((s, p) => {
+      const ini = new Date(p.dataCompra + "T12:00:00");
+      const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1);
+      if (!(ini <= refFim && fim >= ref)) return s; // não ativa neste mês
+      const jaNaFatura = cartoesMes.some((c) =>
+        (c.compras || []).some((x) => x.parcelas > 1 && x.parcelas === p.totalParcelas && Math.abs((x.valor || 0) - p.valorParcela) < 0.01)
+      );
+      return jaNaFatura ? s : s + p.valorParcela;
+    }, 0);
+  }, [parcelados, cartoes, year, monthIdx]);
 
   const faturasCartaoMes = useMemo(() => (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`).reduce((s, c) => s + c.total, 0), [cartoes, year, monthIdx]);
 
@@ -233,7 +245,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "18px 12px 48px" }}>
         {erroSync && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: C.red, borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 14 }}>{erroSync}</div>}
 
-        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} />}
+        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} />}
         {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} />}
         {tab === "importar" && tabPermitida("importar") && <ImportarTab setDespesasMk={setDespesasMk} year={year} monthIdx={monthIdx} cartoes={cartoes} setCartoes={saveCartoes} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} cardProfiles={cardProfiles} setTab={setTab} />}

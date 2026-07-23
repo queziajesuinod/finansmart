@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState } from "react";
 import { C, CATEGORIES, todayStr, genId } from "../../lib/constants";
-import { Card, Label, Field, Inp, Btn, STitle, IcoTxt } from "../ui";
+import { Card, Label, Field, Inp, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, Plus, Pencil, Check, Save } from "../../lib/icons.jsx";
 
 export default function LancamentosTab({ despesas, setDespesasMk }) {
@@ -24,7 +24,7 @@ export default function LancamentosTab({ despesas, setDespesasMk }) {
       <div style={{ display: "grid", gap: 12 }}>
         <Field label="Descrição"><Inp placeholder="Ex: Mercado, Aluguel..." value={form.descricao} onChange={f("descricao")} /></Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label="Valor (R$)"><Inp type="number" placeholder="0,00" value={form.valor} onChange={f("valor")} /></Field>
+          <Field label="Valor (R$)"><MoneyInput placeholder="0,00" value={form.valor} onChange={f("valor")} /></Field>
           <Field label="Data"><Inp type="date" value={form.data} onChange={f("data")} /></Field>
         </div>
         <Field label="Categoria">

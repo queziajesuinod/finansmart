@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { C, fmt, tint } from "../../lib/constants";
 import { Component, Package, Users, Plus, Save, Check, SquareCheck, Square, CircleCheck, Siren } from "../../lib/icons.jsx";
-import { Card, Label, Field, Inp, Sel, Btn, Badge, Empty, STitle, IcoTxt } from "../ui";
+import { Card, Label, Field, Inp, Sel, Btn, Badge, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { admin } from "../../lib/api";
 
 export default function AdminTab() {
@@ -123,7 +123,7 @@ function PlansPanel({ plans, modules, reload, flash, fail }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <Field label="Nome"><Inp placeholder="ex: Premium" value={form.nome} onChange={f("nome")} /></Field>
           <Field label="Slug"><Inp placeholder="ex: premium" value={form.slug} onChange={f("slug")} /></Field>
-          <Field label="Preço (R$)"><Inp type="number" placeholder="0,00" value={form.preco} onChange={f("preco")} /></Field>
+          <Field label="Preço (R$)"><MoneyInput placeholder="0,00" value={form.preco} onChange={f("preco")} /></Field>
           <Field label="Intervalo"><Sel value={form.intervalo} onChange={f("intervalo")}><option value="month">Mensal</option><option value="year">Anual</option></Sel></Field>
         </div>
         <Label>Módulos do plano</Label>
@@ -175,7 +175,7 @@ function PlanCard({ p, modules, reload, flash, fail }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 110px", gap: 10, marginBottom: 10 }}>
         <Field label="Nome"><Inp value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
-        <Field label="Preço (R$)"><Inp type="number" value={preco} onChange={(e) => setPreco(e.target.value)} /></Field>
+        <Field label="Preço (R$)"><MoneyInput value={preco} onChange={(e) => setPreco(e.target.value)} /></Field>
         <Field label="Intervalo"><Sel value={intervalo} onChange={(e) => setIntervalo(e.target.value)}><option value="month">Mensal</option><option value="year">Anual</option></Sel></Field>
       </div>
       <Label>Módulos ({chaves.length})</Label>

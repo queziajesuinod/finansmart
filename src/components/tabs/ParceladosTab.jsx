@@ -1,7 +1,7 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { C, CATEGORIES, todayStr, fmt, genId, catById } from "../../lib/constants";
-import { Card, Label, Field, Inp, Sel, Btn, Badge, Bar, Empty, STitle, Divider, IcoTxt } from "../ui";
+import { Card, Label, Field, Inp, Sel, Btn, Badge, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, Pencil, Trash2, Save, Check, ShoppingBag, Flag, Siren } from "../../lib/icons.jsx";
 
 export default function ParceladosTab({ parcelados, setParcelados, year, monthIdx }) {
@@ -9,7 +9,13 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
   const [form, setForm] = useState(EMPTY);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
+  const formRef = useRef(null);
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  // Ao editar (form abre no topo, mas o card pode estar lá embaixo), rola até o formulário.
+  useEffect(() => {
+    if (showForm && editId && formRef.current) formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showForm, editId]);
 
   const valorTotal = parseFloat((form.valorTotal || "").replace(",", ".")) || 0;
   const n = parseInt(form.totalParcelas) || 0;
@@ -69,11 +75,12 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
       </div>
 
       {showForm && (
+        <div ref={formRef} style={{ scrollMarginTop: 12 }}>
         <Card style={{ marginBottom: 16 }}>
           <STitle>{editId ? "Editar" : "Nova compra parcelada"}</STitle>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <Field label="Descrição" span={2}><Inp placeholder="Ex: TV Samsung, Curso..." value={form.descricao} onChange={f("descricao")} /></Field>
-            <Field label="Valor Total (R$)"><Inp type="number" placeholder="0,00" value={form.valorTotal} onChange={f("valorTotal")} /></Field>
+            <Field label="Valor Total (R$)"><MoneyInput placeholder="0,00" value={form.valorTotal} onChange={f("valorTotal")} /></Field>
             <Field label="Total de Parcelas"><Inp type="number" placeholder="Ex: 12" value={form.totalParcelas} onChange={f("totalParcelas")} /></Field>
             <Field label="Parcela Atual"><Inp type="number" placeholder="1" value={form.parcelaAtual} onChange={f("parcelaAtual")} /></Field>
             <Field label="Data da Compra"><Inp type="date" value={form.dataCompra} onChange={f("dataCompra")} /></Field>
@@ -100,6 +107,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
             <Btn variant="ghost" onClick={() => { setShowForm(false); setEditId(null); setForm(EMPTY); }}>Cancelar</Btn>
           </div>
         </Card>
+        </div>
       )}
 
       {parcelados.length === 0 && !showForm && <Empty icon="" title="Nenhuma compra parcelada" sub='Clique em "+ Nova compra" para registrar.' />}

@@ -288,9 +288,140 @@ function flattenGrupos(r) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PARSER ITAÚ — layout de 2 colunas com a categoria na linha de baixo,
+// vários cartões (final XXXX), parcela colada no nome e estornos.
+// Depende da extração "coluna a coluna" (ver ImportarTab): cada compra
+// vem seguida da sua própria linha de categoria.
+// ═══════════════════════════════════════════════════════════════
+// Categorias que o próprio Itaú imprime → categorias do app.
+const ITAU_CAT = [
+  [/^alimenta/i, "alimentacao"],
+  [/^ve[ií]culos/i, "transporte"],
+  [/^sa[úu]de/i, "saude"],
+  [/^vestu[áa]rio/i, "vestuario"],
+  [/^educa/i, "educacao"],
+  [/^turismo/i, "lazer"],
+  [/^hobby/i, "lazer"],
+  [/^lazer/i, "lazer"],
+  [/^moradia/i, "moradia"],
+  [/^diversos/i, "outros"],
+  [/^servi/i, "outros"],
+];
+// Uma linha "de categoria" do Itaú começa com uma dessas palavras e traz o ". Cidade".
+function itauCategoria(linha) {
+  for (const [re, cat] of ITAU_CAT) if (re.test(linha)) return cat;
+  return null;
+}
+function ehLinhaCategoriaItau(linha) {
+  return /^(alimenta[çc]|ve[ií]culos|sa[úu]de|vestu[áa]rio|educa[çc]|turismo|hobby|lazer|moradia|diversos|servi[çc])/i.test(linha);
+}
+// Detecta se o texto extraído é uma fatura do Itaú. A assinatura mais forte é a
+// linha de categoria com ponto (ex: "VEÍCULOS .CAMPO GRANDE"), exclusiva do Itaú,
+// junto do cabeçalho "VALOR EM R$".
+export function pareceItau(texto) {
+  const t = texto || "";
+  const temCategorias = (t.match(/^(alimenta[çc][ãa]o|ve[ií]culos|vestu[áa]rio|sa[úu]de|educa[çc][ãa]o|turismo|diversos)\s*\./gim) || []).length;
+  return /valor\s+em\s+r\$/i.test(t) && temCategorias >= 3;
+}
+
+function parseItau(texto, year, monthIdx) {
+  // Mês/ano de referência: prioriza o vencimento impresso na fatura.
+  let refYear = year, refMonth = monthIdx + 1;
+  const mv = texto.match(/vencimento[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/i);
+  if (mv) { refMonth = parseInt(mv[2], 10); refYear = parseInt(mv[3], 10); }
+
+  const linhas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const out = [];
+  const reFinal = /(.*?)\(\s*final\s*(\d{3,4})\s*\)/i;
+  const reTxn = /^(\d{2})\/(\d{2})\s+(.+?)\s+(-\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
+
+  let parar = false;          // entrou em seção de próximas faturas/simulação
+  let emProdutos = false;     // seção "produtos e serviços" (anuidade etc.)
+  let portador = "Titular";
+  let final = "";
+
+  for (let i = 0; i < linhas.length; i++) {
+    const l = linhas[i];
+    const ne = l.toLowerCase().replace(/\s+/g, "");
+
+    // A partir daqui é tudo projeção/simulação — não são compras desta fatura.
+    if (/comprasparceladas-?pr[oó]ximas|^simula[çc][aã]o|limitesdecr[eé]dito|limitedecr[eé]dito|encargoscobrados|novotetodejuros|demaistaxasdejuros|totalparapr[oó]ximas|^demaisfaturas/i.test(ne)) parar = true;
+    if (parar) continue;
+
+    // Cabeçalhos "Lançamentos: ...". Detecta a seção de produtos/serviços.
+    if (/^lan[çc]amentos/i.test(l)) { emProdutos = /produtoseservi[çc]os/i.test(ne); continue; }
+
+    // Cabeçalho de cartão: "FULANO (final 1796)".
+    const mf = l.match(reFinal);
+    if (mf) {
+      const nome = mf[1].replace(/\d{4}\.\w+\.\w+\.\d{4}/g, "").trim();
+      portador = nome || portador || "Titular";
+      final = mf[2];
+      emProdutos = false;
+      continue;
+    }
+
+    // Ruído de cabeçalho de tabela e textos corridos.
+    if (/^data\b|estabelecimento|valor\s*em\s*r\$|^total|^continua|^previs|^caso voc|^o pagamento|^consulte|^pague|^banco ita|^n[uú]mero|^nome do|^endere[çc]o|^local de|^sacador/i.test(l)) continue;
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(l)) continue; // datas dd/mm/aaaa (vencimento, processamento)
+
+    const m = l.match(reTxn);
+    if (!m) continue;
+    const dia = parseInt(m[1], 10), mes = parseInt(m[2], 10);
+    if (mes < 1 || mes > 12 || dia < 1 || dia > 31) continue;
+
+    const neg = Boolean(m[4]);
+    let valor = parseFloat(m[5].replace(/\./g, "").replace(",", "."));
+    if (neg) valor = -Math.abs(valor);
+    if (valor === 0) continue;
+
+    const raw = m[3].trim();
+    if (!/[a-zA-ZÀ-ú]/.test(raw)) continue;
+
+    // Categoria: usa a linha de baixo impressa pelo Itaú; senão adivinha.
+    let categoria = null;
+    if (i + 1 < linhas.length && ehLinhaCategoriaItau(linhas[i + 1])) categoria = itauCategoria(linhas[i + 1]);
+
+    // Parcela colada ao nome ("L02/08", "01/02", "SFAUT02/03"). Não vale para
+    // a seção de produtos/serviços (evita virar parcelado a anuidade).
+    const parc = emProdutos ? { parcelaAtual: 1, parcelas: 1 } : detectaParcela(raw);
+
+    // Descrição limpa: remove a parcela colada e a cidade no fim.
+    let desc = raw
+      .replace(/\s*[A-Za-z]?\d{2,}\s*\/\s*\d{2}\s*$/, "")   // "L02/08", "SFAUT02/03"
+      .replace(/\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/, "")          // "02/06"
+      .replace(/\s{2,}/g, " ")
+      .trim() || raw;
+    if (!categoria) categoria = autoCategoria(desc);
+
+    // Ano: se o mês da compra é maior que o mês da fatura, é do ano anterior
+    // (parcelas antigas que o Itaú mostra com a data original, ex: 17/12).
+    const ano = mes > refMonth ? refYear - 1 : refYear;
+    const dd = String(dia).padStart(2, "0"), mm = String(mes).padStart(2, "0");
+
+    out.push({
+      descricao: desc.slice(0, 55),
+      valor,
+      data: `${ano}-${mm}-${dd}`,
+      categoria,
+      ...parc,
+      portador: portador || "Titular",
+      final: final || "",
+    });
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ENTRADA PRINCIPAL — escolhe o melhor parser
 // ═══════════════════════════════════════════════════════════════
 export function parseFatura(texto, year, monthIdx) {
+  // Itaú tem layout próprio (2 colunas + categoria impressa): parser dedicado.
+  if (pareceItau(texto)) {
+    const itau = parseItau(texto, year, monthIdx);
+    if (itau.length >= 2) { itau.totalOficial = null; return itau; }
+  }
+
   // Parser estruturado (CAIXA), com fallback de remontagem de linhas.
   let estru = parseFaturaGrupos(texto, year, monthIdx);
   let flatEstru = flattenGrupos(estru);

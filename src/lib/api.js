@@ -124,6 +124,13 @@ export function saveGoals(arr) { return request("PUT", "/api/goals", arr || []);
 export function saveCategoryRules(map) { return request("PUT", "/api/category-rules", map || {}); }
 export function saveCardProfiles(arr) { return request("PUT", "/api/card-profiles", arr || []); }
 
+// ─── Leitura de fatura com IA (reforço) ──────────────────────
+// Envia o texto já extraído do PDF (o PDF não sai do dispositivo) e recebe as
+// compras estruturadas. refMonth é 1-12.
+export function aiImportFatura({ texto, refYear, refMonth }) {
+  return request("POST", "/api/import/ai", { texto, refYear, refMonth });
+}
+
 // ─── Planos (tela de assinatura) ─────────────────────────────
 export function getPlans() { return request("GET", "/plans"); }
 

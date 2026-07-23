@@ -2,6 +2,7 @@ const { Router } = require("express");
 const { passport, googleEnabled } = require("../config/passport");
 const authController = require("../controllers/authController");
 const requireAuth = require("../middleware/auth");
+const { aiEnabled } = require("../services/aiImport");
 
 const router = Router();
 
@@ -20,8 +21,8 @@ if (googleEnabled) {
   router.get("/google", (req, res) => res.status(503).json({ error: "Login com Google não configurado.", code: "google_disabled" }));
 }
 
-// Endpoint para o frontend saber quais métodos de login estão disponíveis.
-router.get("/config", (req, res) => res.json({ googleEnabled }));
+// Endpoint para o frontend saber quais recursos estão disponíveis.
+router.get("/config", (req, res) => res.json({ googleEnabled, aiImport: aiEnabled() }));
 
 // Dados do usuário logado.
 router.get("/me", requireAuth, authController.me);

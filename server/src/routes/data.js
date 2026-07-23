@@ -1,10 +1,14 @@
 // Rotas de dados do domínio. Já são montadas atrás de requireAuth + requireActiveSubscription.
 const { Router } = require("express");
 const c = require("../controllers/stateController");
+const { aiImport } = require("../controllers/importController");
 
 const router = Router();
 
 router.get("/state", c.getState);
+
+// Leitura de fatura com IA (reforço quando o parser local não bate o total).
+router.post("/import/ai", aiImport);
 
 router.put("/incomes", c.putIncomes);
 router.put("/despesas", c.putDespesas);

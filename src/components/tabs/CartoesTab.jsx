@@ -1,15 +1,34 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { C, CATEGORIES, fmt, fmtPct, catById, genId, tint } from "../../lib/constants";
-import { Card, Label, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt } from "../ui";
-import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save } from "../../lib/icons.jsx";
+import { Card, Label, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
+import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save, Pencil, X } from "../../lib/icons.jsx";
 
 export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles }) {
   const [aberto, setAberto] = useState(null);
   const [aba, setAba] = useState({});
   const [filtroPort, setFiltroPort] = useState({});
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
   function remover(id) { setCartoes(cartoes.filter((c) => c.id !== id)); }
+  function abrirEdicao(c) {
+    setEditId(c.id);
+    setEditForm({ nome: c.nome || "", banco: c.banco || "", limite: c.limite ? String(c.limite) : "", vencimentoDia: c.vencimentoDia ? String(c.vencimentoDia) : "" });
+  }
+  function salvarEdicao(id) {
+    const limite = parseFloat((editForm.limite || "").replace(",", ".")) || 0;
+    const dia = parseInt(editForm.vencimentoDia, 10);
+    setCartoes(cartoes.map((c) => c.id === id ? {
+      ...c,
+      nome: (editForm.nome || "").trim() || c.nome,
+      banco: (editForm.banco || "").trim(),
+      limite,
+      vencimentoDia: dia >= 1 && dia <= 31 ? dia : null,
+      vencimento: dia >= 1 && dia <= 31 ? `2000-01-${String(dia).padStart(2, "0")}` : "",
+    } : c));
+    setEditId(null);
+  }
   function getAba(id) { return aba[id] || "compras"; }
   function getFiltro(id) { return filtroPort[id] || "todos"; }
 
@@ -64,8 +83,30 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                   <div style={{ fontSize: 11, color: C.muted }}>{cartao.banco}{cartao.vencimentoDia ? ` · vence dia ${cartao.vencimentoDia} de cada mês` : (cartao.vencimento ? ` · vence ${new Date(cartao.vencimento + "T12:00:00").toLocaleDateString("pt-BR")}` : "")} · {cartao.compras.length} compras{multiPortador ? ` · ${portadores.length} portadores` : ""}</div>
                 </div>
               </div>
-              <button aria-label="Remover cartão" onClick={() => remover(cartao.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 7, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={13} /></button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button aria-label="Editar cartão" onClick={() => (editId === cartao.id ? setEditId(null) : abrirEdicao(cartao))} style={{ padding: "6px 9px", background: tint(C.accent, 12), border: `1px solid ${tint(C.accent, 24)}`, borderRadius: 7, color: C.accent, cursor: "pointer", display: "inline-flex" }}><Pencil size={13} /></button>
+                <button aria-label="Remover cartão" onClick={() => remover(cartao.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 7, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={13} /></button>
+              </div>
             </div>
+
+            {editId === cartao.id && (
+              <div style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <Label>Editar informações do cartão</Label>
+                  <button aria-label="Fechar edição" onClick={() => setEditId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", display: "inline-flex" }}><X size={15} /></button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Nome / apelido"><Inp value={editForm.nome} onChange={(e) => setEditForm((f) => ({ ...f, nome: e.target.value }))} /></Field>
+                  <Field label="Banco / bandeira"><Inp value={editForm.banco} onChange={(e) => setEditForm((f) => ({ ...f, banco: e.target.value }))} /></Field>
+                  <Field label="Limite total (R$)"><MoneyInput placeholder="0,00" value={editForm.limite} onChange={(e) => setEditForm((f) => ({ ...f, limite: e.target.value }))} /></Field>
+                  <Field label="Dia de vencimento"><Inp type="number" min={1} max={31} placeholder="dia" value={editForm.vencimentoDia} onChange={(e) => setEditForm((f) => ({ ...f, vencimentoDia: e.target.value }))} /></Field>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <Btn onClick={() => salvarEdicao(cartao.id)}><IcoTxt Icon={Save}>Salvar</IcoTxt></Btn>
+                  <Btn variant="ghost" onClick={() => setEditId(null)}>Cancelar</Btn>
+                </div>
+              </div>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
               {[{ l: "Valor da fatura", v: fmt(usado), c: C.amber }, { l: "Limite total", v: limite > 0 ? fmt(limite) : "—", c: C.subtle }, { l: "Disponível", v: limite > 0 ? fmt(disp) : "—", c: C.emerald }].map((x) => (
@@ -203,7 +244,7 @@ function MeusCartoes({ cardProfiles, setCardProfiles }) {
           <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 90px 60px 70px auto", gap: 8, alignItems: "end" }}>
             <Field label="Apelido"><Inp value={p.nome} onChange={(e) => upd(p.id, "nome", e.target.value)} /></Field>
             <Field label="Banco"><Inp value={p.banco || ""} onChange={(e) => upd(p.id, "banco", e.target.value)} /></Field>
-            <Field label="Limite"><Inp type="number" value={p.limite ?? ""} onChange={(e) => upd(p.id, "limite", e.target.value)} /></Field>
+            <Field label="Limite"><MoneyInput value={p.limite ?? ""} onChange={(e) => upd(p.id, "limite", e.target.value)} /></Field>
             <Field label="Venc."><Inp type="number" placeholder="dia" value={p.vencimentoDia ?? ""} onChange={(e) => upd(p.id, "vencimentoDia", e.target.value)} /></Field>
             <Field label="4 finais"><Inp value={p.finais || ""} maxLength={4} onChange={(e) => upd(p.id, "finais", e.target.value.replace(/\D/g, ""))} /></Field>
             <button aria-label="Remover cartão" onClick={() => rm(p.id)} style={{ padding: "9px 10px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={14} /></button>
@@ -216,7 +257,7 @@ function MeusCartoes({ cardProfiles, setCardProfiles }) {
         <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 90px 60px 70px auto", gap: 8, alignItems: "end", marginTop: 6 }}>
           <Field label="Apelido"><Inp placeholder="Ex: Nubank Roxinho" value={novo.nome} onChange={nf("nome")} /></Field>
           <Field label="Banco"><Inp placeholder="Ex: Nubank" value={novo.banco} onChange={nf("banco")} /></Field>
-          <Field label="Limite"><Inp type="number" placeholder="0" value={novo.limite} onChange={nf("limite")} /></Field>
+          <Field label="Limite"><MoneyInput placeholder="0,00" value={novo.limite} onChange={nf("limite")} /></Field>
           <Field label="Venc."><Inp type="number" placeholder="dia" value={novo.vencimentoDia} onChange={nf("vencimentoDia")} /></Field>
           <Field label="4 finais"><Inp placeholder="0000" maxLength={4} value={novo.finais} onChange={(e) => setNovo((p) => ({ ...p, finais: e.target.value.replace(/\D/g, "") }))} /></Field>
           <Btn variant="sm" onClick={add}>+ Add</Btn>

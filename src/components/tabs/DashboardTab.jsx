@@ -1,24 +1,24 @@
 // @ts-nocheck
 import { C, MONTH_NAMES, fmt, fmtPct } from "../../lib/constants";
-import { Card, Label, Badge, Bar, Empty, STitle, Divider } from "../ui";
+import { Card, Label, Badge, Bar, Empty, STitle, Divider, MoneyInput } from "../ui";
 import { CatIcon, Wallet, TrendingDown, PiggyBank, Scale, ReceiptText, CreditCard, Landmark, ShoppingBag, RefreshCw, Undo2, CircleCheck, TriangleAlert, Siren } from "../../lib/icons.jsx";
 
 const STATUS_ICON = { superavit: CircleCheck, equilibrado: TriangleAlert, deficit: Siren };
 
-export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, totalEmprestimos, parcelVencendoMes, despesas, monthIdx }) {
+export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, totalEmprestimos, parcelVencendoMes, despesas, monthIdx, year }) {
   const salarioLabel = salarioVig && salarioVig.mes != null ? `${MONTH_NAMES[salarioVig.mes].slice(0, 3)}/${salarioVig.ano}` : "";
   return (
     <div>
       {/* Renda */}
       <Card style={{ marginBottom: 14 }}>
-        <STitle>Renda de {MONTH_NAMES[monthIdx]}</STitle>
+        <STitle>Renda de {MONTH_NAMES[monthIdx]} de {year}</STitle>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {/* Salário / Renda fixa — herda o mês anterior automaticamente */}
           <div>
             <Label>Salário / Renda fixa</Label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="money-field">
               <span style={{ color: C.indigo, fontWeight: 700, fontSize: 13 }}>R$</span>
-              <input type="number" placeholder="0,00" value={rendaStr} onChange={(e) => setIncome("renda", e.target.value)} style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 22, fontWeight: 800, color: rendaHerdada ? C.subtle : C.text }} />
+              <MoneyInput placeholder="0,00" value={rendaStr} onChange={(e) => setIncome("renda", e.target.value)} style={{ flex: 1, width: "auto", padding: 0, background: "transparent", border: "none", borderRadius: 0, fontSize: 22, fontWeight: 800, color: rendaHerdada ? C.subtle : C.text }} />
             </div>
             {rendaHerdada ? (
               <div style={{ fontSize: 10, color: C.muted, marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}><RefreshCw size={11} /> mantido de {salarioLabel} · recebeu aumento? é só digitar o novo valor</div>
@@ -29,9 +29,9 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
           {/* Renda extra — variável, por mês */}
           <div>
             <Label>Renda extra</Label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="money-field">
               <span style={{ color: C.emerald, fontWeight: 700, fontSize: 13 }}>R$</span>
-              <input type="number" placeholder="0,00" value={income.extra} onChange={(e) => setIncome("extra", e.target.value)} style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 22, fontWeight: 800, color: C.text }} />
+              <MoneyInput placeholder="0,00" value={income.extra} onChange={(e) => setIncome("extra", e.target.value)} style={{ flex: 1, width: "auto", padding: 0, background: "transparent", border: "none", borderRadius: 0, fontSize: 22, fontWeight: 800, color: C.text }} />
             </div>
           </div>
         </div>

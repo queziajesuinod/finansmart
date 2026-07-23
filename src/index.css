@@ -142,6 +142,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 
+/* Campo de valor (renda fixa/variável): parece um input editável de verdade. */
+.money-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: var(--fill);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.money-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.money-field input { min-width: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

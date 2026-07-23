@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { C, fmt, fmtPct, genId } from "../../lib/constants";
 import { calcPMT, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao } from "../../lib/finance";
-import { Card, Label, Field, Inp, Btn, Bar, Empty, STitle, Divider, IcoTxt } from "../ui";
+import { Card, Label, Field, Inp, Btn, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { Pencil, Trash2, Scale, TrendingDown, ReceiptText, BanknoteArrowDown, Check, Save, CircleCheck, Siren, RefreshCw } from "../../lib/icons.jsx";
 
 export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
@@ -85,7 +85,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <Field label="Instituição Financeira" span={1}><Inp placeholder="Ex: Caixa, Nubank..." value={form.instituicao} onChange={f("instituicao")} /></Field>
             <Field label="Número do Contrato"><Inp placeholder="Opcional" value={form.contrato} onChange={f("contrato")} /></Field>
-            <Field label="Valor Contratado (R$)"><Inp type="number" placeholder="0,00" value={form.valorContratado} onChange={f("valorContratado")} /></Field>
+            <Field label="Valor Contratado (R$)"><MoneyInput placeholder="0,00" value={form.valorContratado} onChange={f("valorContratado")} /></Field>
             <Field label="Taxa de Juros Mensal (%)"><Inp type="number" placeholder="Ex: 1.5" value={form.taxa} onChange={f("taxa")} /></Field>
             <Field label="Número de Parcelas"><Inp type="number" placeholder="Ex: 48" value={form.parcelas} onChange={f("parcelas")} /></Field>
             <Field label="Data de Contratação"><Inp type="date" value={form.dataContratacao} onChange={f("dataContratacao")} /></Field>

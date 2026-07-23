@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState } from "react";
 import { C, todayStr, fmt, catById } from "../../lib/constants";
-import { Card, Field, Inp, Btn, Empty, STitle, IcoTxt } from "../ui";
+import { Card, Field, Inp, Btn, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, CreditCard, Pencil, Trash2, RefreshCw, Save } from "../../lib/icons.jsx";
 
 export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, cartoes, monthIdx, year, setTab }) {
@@ -45,7 +45,7 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
           <div style={{ display: "grid", gap: 10 }}>
             <Field label="Descrição"><Inp value={form.descricao} onChange={(e) => setForm((p) => ({ ...p, descricao: e.target.value }))} /></Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <Field label="Valor"><Inp type="number" value={form.valor} onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} /></Field>
+              <Field label="Valor"><MoneyInput value={form.valor} onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} /></Field>
               <Field label="Data"><Inp type="date" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
