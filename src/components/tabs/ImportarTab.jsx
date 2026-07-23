@@ -16,30 +16,36 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   const [totalFatura, setTotalFatura] = useState(null);
   const [aiOn, setAiOn] = useState(false);
   const [loadingIA, setLoadingIA] = useState(false);
+  const [autoIA, setAutoIA] = useState(() => { try { return localStorage.getItem("jp:autoIA") !== "0"; } catch { return true; } });
   const ref = useRef();
   const mf = (k) => (e) => setMeta((p) => ({ ...p, [k]: e.target.value }));
+  const toggleAutoIA = () => setAutoIA((v) => { const nv = !v; try { localStorage.setItem("jp:autoIA", nv ? "1" : "0"); } catch {} return nv; });
 
   // Descobre se a leitura com IA está habilitada no servidor (chave configurada).
   useEffect(() => { authConfig().then((cfg) => setAiOn(Boolean(cfg && cfg.aiImport))).catch(() => {}); }, []);
 
   // Mês/ano de referência para a IA (1-12). Prioriza o campo, senão detecta, senão a tela.
-  function refParaIA() {
-    let ym = meta.mesRef || detectarMesRef(texto || "", items);
+  function refParaIA(txt) {
+    let ym = meta.mesRef || detectarMesRef(txt || texto || "", items);
     if (ym && /^\d{4}-\d{2}$/.test(ym)) return { refYear: parseInt(ym.slice(0, 4), 10), refMonth: parseInt(ym.slice(5, 7), 10) };
     return { refYear: year, refMonth: monthIdx + 1 };
   }
 
   // Reforço: manda o texto já extraído para a IA e reprocessa as compras.
-  async function lerComIA() {
-    if (!texto || texto.trim().length < 20) { setMsg("Não há texto para analisar. Envie um PDF ou cole o texto da fatura primeiro."); return; }
-    const { refYear, refMonth } = refParaIA();
-    setLoadingIA(true); setMsg("Analisando a fatura com IA (isso envia o texto ao servidor)...");
+  // txtArg permite passar o texto direto (no disparo automático, o state ainda
+  // não atualizou). auto=true muda a mensagem e é usado na reconferência.
+  async function lerComIA(txtArg, auto) {
+    const txt = (typeof txtArg === "string" && txtArg) ? txtArg : texto;
+    if (!txt || txt.trim().length < 20) { setMsg("Não há texto para analisar. Envie um PDF ou cole o texto da fatura primeiro."); return; }
+    const { refYear, refMonth } = refParaIA(txt);
+    setLoadingIA(true);
+    setMsg(auto ? "A leitura ficou incompleta — completando com IA..." : "Analisando a fatura com IA (isso envia o texto ao servidor)...");
     try {
-      const r = await aiImportFatura({ texto, refYear, refMonth });
+      const r = await aiImportFatura({ texto: txt, refYear, refMonth });
       if (!r || !Array.isArray(r.compras) || !r.compras.length) { setMsg("A IA não encontrou compras neste texto. Confira o texto extraído e tente novamente."); setLoadingIA(false); return; }
       const itens = r.compras.map((c) => ({ ...c, portador: c.portador || "Titular", final: c.final || "" }));
       itens.totalOficial = r.totalOficial || null;
-      mostrarResultado(itens, texto);
+      mostrarResultado(itens, txt, "ia");
       // Dados do cartão que a IA identificou (banco, limite, vencimento) têm
       // prioridade — preenchem mesmo por cima do que o parser local achou.
       if (r.cartao) {
@@ -53,7 +59,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
       }
     } catch (e) {
       if (e.code === "ai_disabled") setMsg("A leitura com IA não está configurada no servidor.");
-      else if (e.status === 429) setMsg("O serviço de IA atingiu o limite de uso agora. Aguarde um minuto e tente de novo.");
+      else if (e.status === 429) setMsg("O serviço de IA está no limite de uso agora. Aguarde um minuto e tente de novo.");
       else setMsg("Não consegui ler com IA agora. Você ainda pode revisar/corrigir a lista manualmente. " + (e.message || ""));
     }
     setLoadingIA(false);
@@ -158,7 +164,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   // Ao digitar o dia (1-31), guarda como data sintética em meta.vencimento.
   const setVencDia = (e) => { const d = parseInt(e.target.value, 10); setMeta((m) => ({ ...m, vencimento: d >= 1 && d <= 31 ? vencDoDia(d) : "" })); };
 
-  function mostrarResultado(parsed, txtCompleto) {
+  function mostrarResultado(parsed, txtCompleto, fonte = "local") {
     const totalOficial = parsed.totalOficial || acharTotalFatura(txtCompleto || "");
     // Aplica as categorias que o usuário já ensinou em importações anteriores.
     const comRegras = aplicarRegras(parsed, categoryRules);
@@ -193,18 +199,29 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     const somaExtraida = comRegras.reduce((s, i) => s + (parseFloat(i.valor) || 0), 0);
     const aprendidas = comRegras.filter((i) => { const k = merchantKey(i.descricao); return k && categoryRules && categoryRules[k]; }).length;
     setTotalFatura(totalOficial || null);
+    const dif = totalOficial ? totalOficial - somaExtraida : 0;
+    const bate = !totalOficial || Math.abs(dif) <= 1;
     let aviso = "";
-    if (totalOficial && Math.abs(totalOficial - somaExtraida) > 1) {
-      const dif = totalOficial - somaExtraida;
+    if (!bate) {
       if (dif > 0) {
-        const dicaIA = aiOn ? ` Para ler as compras que faltaram, toque em "Melhorar leitura com IA".` : "";
-        aviso = ` O total oficial da fatura é ${fmt(totalOficial)} (será usado no app). As compras lidas somam ${fmt(somaExtraida)} — a diferença de ${fmt(Math.abs(dif))} pode ser compras que o leitor não detalhou, mas o valor total do cartão estará correto.${dicaIA}`;
+        const dicaIA = aiOn ? (fonte === "ia" ? ` Confira/edite a lista antes de salvar.` : ` Para ler as compras que faltaram, toque em "Melhorar leitura com IA".`) : "";
+        const prefixo = fonte === "ia" ? "Mesmo com a IA, a" : "A";
+        aviso = ` ${prefixo} soma das compras lidas é ${fmt(somaExtraida)}, abaixo do total oficial ${fmt(totalOficial)} (que será usado no app). Diferença de ${fmt(Math.abs(dif))}.${dicaIA}`;
       } else {
         aviso = ` As compras lidas somam ${fmt(somaExtraida)}, mas a fatura informa ${fmt(totalOficial)}. Confira a lista e remova duplicatas antes de salvar.`;
       }
+    } else if (fonte === "ia" && totalOficial) {
+      aviso = ` A soma agora bate com o total da fatura (${fmt(totalOficial)}).`;
     }
     const aprendidoTxt = aprendidas > 0 ? ` ${aprendidas} categorizada${aprendidas > 1 ? "s" : ""} automaticamente pelo que você já ensinou.` : "";
-    setMsg(`${comRegras.length} transações encontradas${parc > 0 ? ` (${parc} parcelada${parc > 1 ? "s" : ""})` : ""}. Revise e confirme abaixo.${aprendidoTxt}${aviso}`);
+    const prefixoMsg = fonte === "ia" ? "IA: " : "";
+    setMsg(`${prefixoMsg}${comRegras.length} transações encontradas${parc > 0 ? ` (${parc} parcelada${parc > 1 ? "s" : ""})` : ""}. Revise e confirme abaixo.${aprendidoTxt}${aviso}`);
+
+    // Reforço automático: se a leitura LOCAL ficou incompleta (faltou valor) e a
+    // IA está ligada, completa sozinha — sem precisar clicar no botão.
+    if (fonte === "local" && aiOn && autoIA && totalOficial && dif > 1) {
+      lerComIA(txtCompleto, true);
+    }
   }
 
   function processarTexto(txt) {
@@ -458,9 +475,13 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
             <Btn variant="ghost" onClick={lerComIA} disabled={loadingIA} style={{ width: "100%" }}>
               <IcoTxt Icon={Sparkles}>{loadingIA ? "Analisando com IA..." : "Melhorar leitura com IA"}</IcoTxt>
             </Btn>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.subtle, marginTop: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={autoIA} onChange={toggleAutoIA} style={{ width: 15, height: 15, accentColor: "var(--accent)", cursor: "pointer" }} />
+              Completar automaticamente com IA quando o total não bater
+            </label>
             <p style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.6, display: "flex", gap: 6, alignItems: "flex-start" }}>
               <Lightbulb size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>Use quando o total não bater ou a leitura ficar incompleta. Envia <strong>só o texto</strong> extraído (o PDF não sai do seu aparelho) para uma IA que não guarda seus dados.</span>
+              <span>Envia <strong>só o texto</strong> extraído (o PDF não sai do seu aparelho) para uma IA que não guarda seus dados. Faturas grandes são lidas em partes automaticamente.</span>
             </p>
           </div>
         )}

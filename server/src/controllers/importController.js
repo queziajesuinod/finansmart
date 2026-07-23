@@ -1,6 +1,24 @@
 // Leitura de fatura com IA (reforço). Recebe o texto extraído do PDF e o mês de
 // referência; devolve as compras estruturadas. Fica atrás de requireAuth.
 const { lerFaturaComIA } = require("../services/aiImport");
+const { responderAssistente } = require("../services/aiAssistant");
+
+// Assistente financeiro: pergunta + resumo dos dados do usuário → resposta.
+async function assistant(req, res, next) {
+  try {
+    const { pergunta, contexto, historico } = req.body || {};
+    if (!pergunta || !String(pergunta).trim()) return res.status(400).json({ error: "Digite uma pergunta.", code: "empty_question" });
+    const r = await responderAssistente({
+      pergunta: String(pergunta).slice(0, 500),
+      contexto: String(contexto || "").slice(0, 4000),
+      historico: Array.isArray(historico) ? historico : [],
+    });
+    res.json(r);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code || "ai_error" });
+    next(err);
+  }
+}
 
 async function aiImport(req, res, next) {
   try {
@@ -22,4 +40,4 @@ async function aiImport(req, res, next) {
   }
 }
 
-module.exports = { aiImport };
+module.exports = { aiImport, assistant };

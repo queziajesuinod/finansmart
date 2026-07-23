@@ -3,6 +3,7 @@ import { useState } from "react";
 import { C, todayStr, fmt, catById } from "../../lib/constants";
 import { Card, Field, Inp, Btn, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, CreditCard, Pencil, Trash2, RefreshCw, Save } from "../../lib/icons.jsx";
+import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
 
 export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, cartoes, monthIdx, year, setTab }) {
   const [editId, setEditId] = useState(null);
@@ -30,7 +31,7 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
 
       {cartoesMes.map((cartao) => (
         <div key={cartao.id} onClick={() => setTab && setTab("cartoes")} style={{ background: "rgba(99,102,241,0.06)", borderRadius: 13, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, border: `1px solid rgba(99,102,241,0.2)`, cursor: "pointer" }}>
-          <div style={{ width: 38, height: 38, borderRadius: 10, background: `var(--accent)`, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><CreditCard size={18} /></div>
+          <CardBrandTile banco={cartao.banco} nome={cartao.nome} w={38} h={38} radius={10} iconSize={18} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{cartao.nome}</div>
             <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Fatura · {cartao.compras.length} compras · toque para ver detalhes</div>
@@ -60,7 +61,7 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
         const cat = catById(d.categoria);
         return (
           <div key={d.id} style={{ background: C.surface, borderRadius: 13, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, border: `1px solid ${C.border}` }}>
-            <div style={{ width: 38, height: 38, borderRadius: 10, background: `color-mix(in srgb, ${cat.color} 10%, transparent)`, color: cat.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><CatIcon id={cat.id} size={18} /></div>
+            <MerchantIcon desc={d.descricao} cat={cat.id} size={18} box={38} style={{ borderRadius: 10 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.descricao}</div>
               <div style={{ fontSize: 10, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>{cat.label} · {new Date(d.data + "T12:00:00").toLocaleDateString("pt-BR")}{d.fixo ? <><span>·</span><RefreshCw size={10} /></> : ""}</div>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { C, CATEGORIES, todayStr, genId } from "../../lib/constants";
 import { Card, Label, Field, Inp, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, Plus, Pencil, Check, Save } from "../../lib/icons.jsx";
+import { MerchantIcon } from "../../lib/brandIcons.jsx";
 
 export default function LancamentosTab({ despesas, setDespesasMk }) {
   const [form, setForm] = useState({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false });
@@ -22,7 +23,12 @@ export default function LancamentosTab({ despesas, setDespesasMk }) {
     <Card>
       <STitle>{editId ? <IcoTxt Icon={Pencil}>Editar despesa</IcoTxt> : <IcoTxt Icon={Plus}>Nova despesa</IcoTxt>}</STitle>
       <div style={{ display: "grid", gap: 12 }}>
-        <Field label="Descrição"><Inp placeholder="Ex: Mercado, Aluguel..." value={form.descricao} onChange={f("descricao")} /></Field>
+        <Field label="Descrição">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <MerchantIcon desc={form.descricao} cat={form.categoria} size={16} box={30} />
+            <Inp placeholder="Ex: Mercado, Netflix, Aluguel..." value={form.descricao} onChange={f("descricao")} style={{ flex: 1 }} />
+          </div>
+        </Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="Valor (R$)"><MoneyInput placeholder="0,00" value={form.valor} onChange={f("valor")} /></Field>
           <Field label="Data"><Inp type="date" value={form.data} onChange={f("data")} /></Field>

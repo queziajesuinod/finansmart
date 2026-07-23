@@ -131,6 +131,11 @@ export function aiImportFatura({ texto, refYear, refMonth }) {
   return request("POST", "/api/import/ai", { texto, refYear, refMonth });
 }
 
+// ─── Assistente financeiro (IA) ──────────────────────────────
+export function askAssistant({ pergunta, contexto, historico }) {
+  return request("POST", "/api/assistant", { pergunta, contexto, historico });
+}
+
 // ─── Planos (tela de assinatura) ─────────────────────────────
 export function getPlans() { return request("GET", "/plans"); }
 

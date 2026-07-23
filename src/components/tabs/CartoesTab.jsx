@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { C, CATEGORIES, fmt, fmtPct, catById, genId, tint } from "../../lib/constants";
 import { Card, Label, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save, Pencil, X } from "../../lib/icons.jsx";
+import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
 
 export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles }) {
   const [aberto, setAberto] = useState(null);
@@ -77,7 +78,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
           <Card key={cartao.id} style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <div style={{ width: 46, height: 32, borderRadius: 7, background: `var(--accent)`, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><CreditCard size={17} /></div>
+                <CardBrandTile banco={cartao.banco} nome={cartao.nome} w={46} h={32} radius={7} iconSize={17} />
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{cartao.nome}</div>
                   <div style={{ fontSize: 11, color: C.muted }}>{cartao.banco}{cartao.vencimentoDia ? ` · vence dia ${cartao.vencimentoDia} de cada mês` : (cartao.vencimento ? ` · vence ${new Date(cartao.vencimento + "T12:00:00").toLocaleDateString("pt-BR")}` : "")} · {cartao.compras.length} compras{multiPortador ? ` · ${portadores.length} portadores` : ""}</div>
@@ -164,7 +165,9 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                       const estorno = compra.valor < 0;
                       return (
                         <div key={compra.id} style={{ background: "var(--fill-2)", borderRadius: 10, padding: "10px 13px", marginBottom: 7, display: "flex", alignItems: "center", gap: 11, border: `1px solid ${C.border}` }}>
-                          <div style={{ width: 34, height: 34, borderRadius: 9, background: `color-mix(in srgb, ${(estorno ? C.emerald : cat.color)} 10%, transparent)`, color: estorno ? C.emerald : cat.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{estorno ? <ArrowLeftRight size={16} /> : <CatIcon id={cat.id} size={16} />}</div>
+                          {estorno
+                            ? <div style={{ width: 34, height: 34, borderRadius: 9, background: `color-mix(in srgb, ${C.emerald} 10%, transparent)`, color: C.emerald, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeftRight size={16} /></div>
+                            : <MerchantIcon desc={compra.descricao} cat={cat.id} size={17} box={34} style={{ borderRadius: 9 }} />}
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{compra.descricao}</div>
                             <div style={{ fontSize: 10, color: C.muted }}>{cat.label} · {new Date(compra.data + "T12:00:00").toLocaleDateString("pt-BR")}{compra.parcelas > 1 ? ` · ${compra.parcelaAtual}/${compra.parcelas}` : ""}{multiPortador && compra.portador ? ` · ${compra.portador.split(" ")[0]}` : ""}</div>

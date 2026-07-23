@@ -18,6 +18,9 @@ import { TabIcon } from "../lib/icons.jsx";
 import { LogoTile, Wordmark } from "./Logo.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import ProfileModal from "./ProfileModal.jsx";
+import NotificationBell from "./NotificationBell.jsx";
+import { gerarNotificacoes } from "../lib/notifications";
+import { detectarAssinaturas } from "../lib/subscriptions";
 import { CircleUser } from "../lib/icons.jsx";
 
 export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
@@ -180,6 +183,20 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     return [...map.values()];
   }, [cartoes, cardProfilesDB]);
 
+  // Assinaturas / recorrentes detectadas nas faturas + lançamentos (todos os meses).
+  // Limite de meses para considerar recorrente é configurável (salvo no navegador).
+  const [assinMinMeses, setAssinMinMeses] = useState(() => { try { return parseInt(localStorage.getItem("jp:assinMinMeses"), 10) || 3; } catch { return 3; } });
+  const mudarAssinMinMeses = (n) => { const v = Math.max(1, Math.min(12, n)); setAssinMinMeses(v); try { localStorage.setItem("jp:assinMinMeses", String(v)); } catch { /* ignore */ } };
+  const despesasTodas = useMemo(() => Object.values(allDespesas || {}).flat(), [allDespesas]);
+  const assinaturas = useMemo(() => detectarAssinaturas({ cartoes, despesas: despesasTodas, minMeses: assinMinMeses }), [cartoes, despesasTodas, assinMinMeses]);
+
+  // Notificações proativas (saldo, faturas vencendo, metas, parcelas, aumentos...).
+  const notificacoes = useMemo(() => gerarNotificacoes({
+    year, monthIdx, today,
+    totalRenda, totalDespesas, projecao,
+    porCategoria, cartoes, parcelVencendoMes, goals, assinaturas: assinaturas.itens,
+  }), [year, monthIdx, totalRenda, totalDespesas, projecao, porCategoria, cartoes, parcelVencendoMes, goals, assinaturas]);
+
   const ALL_TABS = [
     { id: "dashboard", label: "Visão Geral" },
     { id: "lancamentos", label: "Lançamentos" },
@@ -220,6 +237,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <NotificationBell notificacoes={notificacoes} onNavigate={setTab} />
             <button aria-label="Meu perfil" onClick={() => setProfileOpen(true)} style={{ background: "none", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 8, width: 28, height: 28, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><CircleUser size={16} /></button>
             <ThemeToggle />
             <button aria-label="Mês anterior" onClick={() => { const d = new Date(year, monthIdx - 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 8, width: 28, height: 28, cursor: "pointer" }}>‹</button>
@@ -245,7 +263,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "18px 12px 48px" }}>
         {erroSync && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: C.red, borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 14 }}>{erroSync}</div>}
 
-        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} />}
+        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} />}
         {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} />}
         {tab === "importar" && tabPermitida("importar") && <ImportarTab setDespesasMk={setDespesasMk} year={year} monthIdx={monthIdx} cartoes={cartoes} setCartoes={saveCartoes} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} cardProfiles={cardProfiles} setTab={setTab} />}

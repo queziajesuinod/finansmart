@@ -40,74 +40,53 @@ Responda SOMENTE com JSON válido no formato:
 {"totalOficial": number|null, "cartao": {"banco": string|null, "nome": string|null, "limite": number|null, "vencimentoDia": number|null, "portadores": [{"nome": string, "final": string}]}, "compras": [{"descricao": string, "valor": number, "data": "YYYY-MM-DD", "categoria": string, "parcelaAtual": number, "parcelas": number, "portador": string, "final": string}]}`;
 }
 
-// Extrai as compras da fatura via IA. Retorna { compras: [...], totalOficial }.
-async function lerFaturaComIA({ texto, refYear, refMonth }) {
-  if (!aiEnabled()) {
-    const err = new Error("Leitura com IA não configurada no servidor.");
-    err.code = "ai_disabled";
-    err.status = 501;
-    throw err;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Chamada genérica ao Groq (reutilizada pelo importador e pelo assistente).
+// Retorna o texto da resposta. json=true força response_format JSON. 1 retry em 429.
+async function groqCompletion(messages, { json = false, maxTokens = 1024, temperature } = {}) {
+  if (!aiEnabled()) { const err = new Error("Serviço de IA não configurado no servidor."); err.code = "ai_disabled"; err.status = 501; throw err; }
+  const body = { model: MODEL, temperature: temperature != null ? temperature : (json ? 0 : 0.3), max_tokens: maxTokens, messages };
+  if (json) body.response_format = { type: "json_object" };
+
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    let res;
+    try {
+      res = await fetch(GROQ_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      const err = new Error("Não foi possível contatar o serviço de IA.");
+      err.code = "ai_unreachable"; err.status = 502; throw err;
+    }
+    if (res.status === 429 && tentativa === 0) { await sleep(2500); continue; } // rate limit: espera e tenta de novo
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      const err = new Error(`Serviço de IA retornou erro ${res.status}.`);
+      err.code = "ai_error"; err.status = res.status === 429 ? 429 : 502; err.detail = txt.slice(0, 300); throw err;
+    }
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || "";
   }
-  if (!texto || texto.trim().length < 20) {
-    const err = new Error("Texto da fatura muito curto para analisar.");
-    err.code = "empty_text";
-    err.status = 400;
-    throw err;
-  }
+  const err = new Error("O serviço de IA está ocupado (limite de uso). Tente novamente em instantes.");
+  err.code = "ai_rate_limited"; err.status = 429; throw err;
+}
 
-  // Corta texto exagerado para caber no limite de tokens do modelo.
-  const conteudo = texto.length > 24000 ? texto.slice(0, 24000) : texto;
+// Uma chamada ao Groq com JSON mode para a leitura de fatura.
+async function chamarGroq(conteudo, refYear, refMonth) {
+  const raw = await groqCompletion(
+    [{ role: "system", content: systemPrompt(refYear, refMonth) }, { role: "user", content: `Texto da fatura:\n\n${conteudo}` }],
+    { json: true, maxTokens: 8000 }
+  );
+  try { return JSON.parse(raw || "{}"); }
+  catch { const err = new Error("A IA respondeu em formato inesperado."); err.code = "ai_bad_json"; err.status = 502; throw err; }
+}
 
-  const body = {
-    model: MODEL,
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: systemPrompt(refYear, refMonth) },
-      { role: "user", content: `Texto da fatura:\n\n${conteudo}` },
-    ],
-  };
-
-  let res;
-  try {
-    res = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (e) {
-    const err = new Error("Não foi possível contatar o serviço de IA.");
-    err.code = "ai_unreachable";
-    err.status = 502;
-    throw err;
-  }
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    const err = new Error(`Serviço de IA retornou erro ${res.status}.`);
-    err.code = "ai_error";
-    err.status = res.status === 429 ? 429 : 502;
-    err.detail = txt.slice(0, 300);
-    throw err;
-  }
-
-  const data = await res.json();
-  const raw = data?.choices?.[0]?.message?.content || "{}";
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    const err = new Error("A IA respondeu em formato inesperado.");
-    err.code = "ai_bad_json";
-    err.status = 502;
-    throw err;
-  }
-
-  const compras = Array.isArray(parsed.compras) ? parsed.compras : [];
-  const limpas = compras
+// Normaliza a resposta da IA em { compras, totalOficial, cartao }.
+function parseResposta(parsed) {
+  const compras = (Array.isArray(parsed.compras) ? parsed.compras : [])
     .map((c) => ({
       descricao: String(c.descricao || "").slice(0, 55),
       valor: Number(c.valor) || 0,
@@ -122,15 +101,12 @@ async function lerFaturaComIA({ texto, refYear, refMonth }) {
 
   const totalOficial = Number(parsed.totalOficial) > 0 ? Number(parsed.totalOficial) : null;
 
-  // Dados do cartão/conta.
   let cartao = null;
   const cc = parsed.cartao;
   if (cc && typeof cc === "object") {
     const dia = parseInt(cc.vencimentoDia, 10);
     const portadores = Array.isArray(cc.portadores)
-      ? cc.portadores
-          .map((p) => ({ nome: String(p?.nome || "").slice(0, 40), final: String(p?.final || "").replace(/\D/g, "").slice(0, 4) }))
-          .filter((p) => p.nome)
+      ? cc.portadores.map((p) => ({ nome: String(p?.nome || "").slice(0, 40), final: String(p?.final || "").replace(/\D/g, "").slice(0, 4) })).filter((p) => p.nome)
       : [];
     cartao = {
       banco: String(cc.banco || "").slice(0, 40),
@@ -140,8 +116,62 @@ async function lerFaturaComIA({ texto, refYear, refMonth }) {
       portadores,
     };
   }
-
-  return { compras: limpas, totalOficial, cartao };
+  return { compras, totalOficial, cartao };
 }
 
-module.exports = { lerFaturaComIA, aiEnabled };
+// Divide a fatura em blocos ~maxChars, carregando o cabeçalho (vencimento/limite)
+// e o último "Cartão (final XXXX)" para cada bloco não perder o contexto.
+function dividirEmBlocos(texto, maxChars) {
+  const linhas = texto.split(/\r?\n/);
+  const preambulo = linhas.slice(0, 25).join("\n");
+  const headerRe = /\(\s*final\s*\d{3,4}\s*\)/i;
+  const blocos = [];
+  let start = 0;
+  while (start < linhas.length) {
+    let end = start, size = 0;
+    while (end < linhas.length && size < maxChars) { size += linhas[end].length + 1; end++; }
+    let ultimoCartao = "";
+    for (let i = start - 1; i >= 0; i--) { if (headerRe.test(linhas[i])) { ultimoCartao = linhas[i]; break; } }
+    const corpo = linhas.slice(start, end).join("\n");
+    const ctx = start === 0 ? "" : `${preambulo}\n${ultimoCartao ? "Cartão desta parte: " + ultimoCartao : ""}\n`;
+    blocos.push(ctx + corpo);
+    start = end;
+  }
+  return blocos;
+}
+
+// Extrai as compras da fatura via IA. Para faturas grandes, processa em blocos
+// e junta os resultados (evita cortar transações no limite de tokens).
+async function lerFaturaComIA({ texto, refYear, refMonth }) {
+  if (!aiEnabled()) {
+    const err = new Error("Leitura com IA não configurada no servidor.");
+    err.code = "ai_disabled"; err.status = 501; throw err;
+  }
+  if (!texto || texto.trim().length < 20) {
+    const err = new Error("Texto da fatura muito curto para analisar.");
+    err.code = "empty_text"; err.status = 400; throw err;
+  }
+
+  const MAX_BLOCO = 11000; // ~caracteres por chamada
+  const blocos = texto.length <= 12000 ? [texto] : dividirEmBlocos(texto, MAX_BLOCO);
+
+  const todas = [];
+  let totalOficial = null;
+  let cartao = null;
+  const portadoresSet = new Map();
+
+  for (let i = 0; i < blocos.length; i++) {
+    const parsed = await chamarGroq(blocos[i], refYear, refMonth);
+    const r = parseResposta(parsed);
+    todas.push(...r.compras); // blocos são contíguos (sem sobreposição) → sem dedup
+    if (totalOficial == null && r.totalOficial != null) totalOficial = r.totalOficial;
+    if (!cartao && r.cartao && (r.cartao.banco || r.cartao.limite || r.cartao.vencimentoDia)) cartao = r.cartao;
+    (r.cartao?.portadores || []).forEach((p) => { const k = p.final || p.nome; if (k && !portadoresSet.has(k)) portadoresSet.set(k, p); });
+    if (i < blocos.length - 1) await sleep(400); // respeita o rate limit da cota grátis
+  }
+
+  if (cartao) cartao.portadores = [...portadoresSet.values()];
+  return { compras: todas, totalOficial, cartao, blocos: blocos.length };
+}
+
+module.exports = { lerFaturaComIA, aiEnabled, groqCompletion };

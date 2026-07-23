@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import { C, MONTH_NAMES, fmt, tint } from "../../lib/constants";
 import { calcPMT, calcSaldoDevedor } from "../../lib/finance";
+import { askAssistant } from "../../lib/api";
 import { LogoMark } from "../Logo.jsx";
 
 export default function AssistenteTab({ chat, setChat, totalRenda, totalDespesas, saldoAtual, projecao, statusInfo, porCategoria, goals, emprestimos, parcelados, monthIdx, year }) {
@@ -9,28 +10,39 @@ export default function AssistenteTab({ chat, setChat, totalRenda, totalDespesas
   const [loading, setLoading] = useState(false);
   const ref = useRef();
 
+  // Monta o resumo financeiro do mês para a IA (ela responde só com base nisso).
+  function montarContexto() {
+    const totalSD = emprestimos.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pago), 0);
+    const totalPMT = emprestimos.reduce((s, e) => s + calcPMT(e.valorContratado, e.taxa, e.parcelas), 0);
+    return [
+      `Mês de referência: ${MONTH_NAMES[monthIdx]}/${year}`,
+      `Renda total: ${fmt(totalRenda)}`,
+      `Gasto total: ${fmt(totalDespesas)}`,
+      `Saldo atual: ${fmt(saldoAtual)}`,
+      `Projeção de saldo no fim do mês: ${fmt(projecao)}`,
+      `Situação: ${statusInfo?.label || "sem dados"}`,
+      `Gastos por categoria: ${porCategoria.map((c) => `${c.label} ${fmt(c.total)}`).join(", ") || "nenhum"}`,
+      `Empréstimos: ${emprestimos.length} contrato(s), saldo devedor ${fmt(totalSD)}, parcelas ${fmt(totalPMT)}/mês`,
+      `Metas: ${goals.map((g) => `${g.nome} ${fmt(g.atual)}/${fmt(g.alvo)}`).join(", ") || "nenhuma"}`,
+      `Compras parceladas ativas: ${parcelados.length}`,
+    ].join("\n");
+  }
+
   async function send() {
     if (!input.trim() || loading) return;
     const msg = input.trim(); setInput("");
-    const newChat = [...chat, { role: "user", content: msg }];
-    setChat(newChat); setLoading(true);
+    setChat((p) => [...p, { role: "user", content: msg }]);
+    setLoading(true);
     try {
-      const totalSD = emprestimos.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pago), 0);
-      const totalPMT = emprestimos.reduce((s, e) => s + calcPMT(e.valorContratado, e.taxa, e.parcelas), 0);
-      const context = `Você é FinançaBot, assistente financeiro pessoal. Responda em português, de forma direta e prática.
-Dados de ${MONTH_NAMES[monthIdx]}/${year}:
-- Renda: ${fmt(totalRenda)} | Gasto: ${fmt(totalDespesas)} | Saldo: ${fmt(saldoAtual)} | Projeção: ${fmt(projecao)} | Status: ${statusInfo?.label || "sem dados"}
-- Categorias: ${porCategoria.map((c) => `${c.label}: ${fmt(c.total)}`).join(", ") || "nenhum"}
-- Empréstimos: ${emprestimos.length} contrato(s) | Saldo devedor total: ${fmt(totalSD)} | Parcelas/mês: ${fmt(totalPMT)}
-- Metas: ${goals.map((g) => `${g.nome}: ${fmt(g.atual)}/${fmt(g.alvo)}`).join(", ") || "nenhuma"}
-- Parcelados ativos: ${parcelados.length}
-Seja conciso (máx 4 parágrafos). Use emojis com moderação.`;
-      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: context + "\n\nPergunta: " + msg }] }) });
-      const data = await r.json();
-      const reply = data.content?.map((b) => b.text || "").join("") || "Não consegui responder.";
-      setChat((p) => [...p, { role: "assistant", content: reply }]);
-    } catch {
-      setChat((p) => [...p, { role: "assistant", content: "Erro ao conectar. Tente novamente." }]);
+      const r = await askAssistant({ pergunta: msg, contexto: montarContexto(), historico: chat });
+      setChat((p) => [...p, { role: "assistant", content: r.resposta || "Não consegui responder." }]);
+    } catch (e) {
+      const txt = e.code === "ai_disabled"
+        ? "O assistente com IA ainda não está configurado no servidor (falta a chave da Groq)."
+        : e.status === 429
+        ? "O serviço de IA está no limite de uso agora. Tente de novo em um minuto."
+        : "Não consegui conectar ao assistente agora. Tente novamente.";
+      setChat((p) => [...p, { role: "assistant", content: txt }]);
     }
     setLoading(false);
     setTimeout(() => ref.current?.scrollIntoView({ behavior: "smooth" }), 100);
