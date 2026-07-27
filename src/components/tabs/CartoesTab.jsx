@@ -1,12 +1,12 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
-import { C, CATEGORIES, fmt, fmtPct, catById, genId, tint } from "../../lib/constants";
+import { C, CATEGORIES, MONTH_NAMES, fmt, fmtPct, catById, genId, tint } from "../../lib/constants";
 import { Card, Label, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save, Pencil, X } from "../../lib/icons.jsx";
 import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
 import { nomeMembro, membroEfetivo } from "../Membros.jsx";
 
-export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles, membros = [] }) {
+export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles, membros = [], year, monthIdx }) {
   const [aberto, setAberto] = useState(null);
   const [aba, setAba] = useState({});
   const [filtroPort, setFiltroPort] = useState({});
@@ -34,22 +34,34 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
   function getAba(id) { return aba[id] || "compras"; }
   function getFiltro(id) { return filtroPort[id] || "todos"; }
 
-  const semFaturas = !cartoes || !cartoes.length;
-  const totalFaturas = cartoes.reduce((s, c) => s + c.total, 0);
-  const totalLimite = cartoes.reduce((s, c) => s + (c.limite || 0), 0);
-  const totalDisponivel = cartoes.reduce((s, c) => s + Math.max(0, (c.limite || 0) - c.total), 0);
+  // Filtra as faturas pelo mês visível na tela (mesRef "ano-monthIdx"). Vendo
+  // junho, só aparecem faturas de junho — mesmo que haja de outros meses.
+  const mk = (year != null && monthIdx != null) ? `${year}-${monthIdx}` : null;
+  const faturasMes = mk == null ? (cartoes || []) : (cartoes || []).filter((c) => c.mesRef === mk);
+  const outrosMeses = (cartoes || []).length - faturasMes.length;
+  const mesNome = monthIdx != null ? MONTH_NAMES[monthIdx] : "";
+
+  const semFaturasMes = !faturasMes.length;
+  const totalFaturas = faturasMes.reduce((s, c) => s + c.total, 0);
+  const totalLimite = faturasMes.reduce((s, c) => s + (c.limite || 0), 0);
+  const totalDisponivel = faturasMes.reduce((s, c) => s + Math.max(0, (c.limite || 0) - c.total), 0);
 
   return (
     <div>
       <MeusCartoes cardProfiles={cardProfiles} setCardProfiles={setCardProfiles} />
 
-      {semFaturas && <Empty icon="" title="Nenhuma fatura importada" sub='Use a aba "Importar PDF" para adicionar a fatura de um cartão.' />}
+      {semFaturasMes && (
+        <Empty icon="" title={mk == null ? "Nenhuma fatura importada" : `Nenhuma fatura de ${mesNome}`}
+          sub={outrosMeses > 0
+            ? `Você tem ${outrosMeses} fatura${outrosMeses > 1 ? "s" : ""} em outros meses — navegue pelos meses no topo para vê-las.`
+            : 'Use a aba "Importar PDF" para adicionar a fatura de um cartão.'} />
+      )}
 
-      {!semFaturas && (
+      {!semFaturasMes && (
       <>
       <div className="stat-grid" style={{ marginBottom: 16 }}>
         {[
-          { l: "Total em faturas", v: fmt(totalFaturas), c: C.amber, Icon: ReceiptText },
+          { l: `Faturas de ${mesNome}`, v: fmt(totalFaturas), c: C.amber, Icon: ReceiptText },
           { l: "Limite total", v: fmt(totalLimite), c: C.indigo, Icon: CreditCard },
           { l: "Disponível", v: fmt(totalDisponivel), c: C.emerald, Icon: Wallet },
         ].map((x) => (
@@ -60,8 +72,11 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
           </Card>
         ))}
       </div>
+      {outrosMeses > 0 && (
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 12, marginTop: -4 }}>Mostrando só as faturas de {mesNome}. Há +{outrosMeses} em outros meses (navegue pelos meses no topo).</div>
+      )}
 
-      {cartoes.map((cartao) => {
+      {faturasMes.map((cartao) => {
         const usado = cartao.total;
         const limite = cartao.limite || 0;
         const disp = Math.max(0, limite - usado);
