@@ -118,25 +118,30 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const setIncome = (k, v) => saveIncomes({ ...incomes, [mk]: { ...income, [k]: v } });
   const setDespesasMk = (fn) => { const next = typeof fn === "function" ? fn(despesas) : fn; saveDespesas({ ...allDespesas, [mk]: next }); };
 
-  // Salário: usa o explícito do mês; se vazio, herda o último mês informado.
+  // Renda fixa estruturada: soma dos líquidos dos holerites vigentes no mês.
+  const holeritesDoMes = useMemo(() => holeritesVigentes(holerites, year, monthIdx), [holerites, year, monthIdx]);
+  const rendaHoleritesNum = useMemo(() => holeritesDoMes.reduce((s, h) => s + liquidoHolerite(h), 0), [holeritesDoMes]);
+  const temHoleriteMes = holeritesDoMes.length > 0;
+
+  // Salário manual: usa o explícito do mês; se vazio, herda o último mês — MAS só
+  // quando NÃO há holerite no mês. Com holerite, ele é a renda fixa; herdar o
+  // salário manual por cima duplicaria a renda.
   const salarioVig = salarioVigente(incomes, year, monthIdx);
   const rendaExplicita = income.renda !== "" && income.renda != null;
-  const rendaHerdada = !rendaExplicita && salarioVig.valor !== "";
+  const rendaHerdada = !rendaExplicita && !temHoleriteMes && salarioVig.valor !== "";
   const rendaStr = rendaExplicita ? income.renda : (rendaHerdada ? salarioVig.valor : "");
 
   const rendaManualNum = parseFloat((rendaStr || "").replace(",", ".")) || 0;
   const extraManualNum = parseFloat((income.extra || "").replace(",", ".")) || 0;
 
-  // Renda fixa estruturada: soma dos líquidos dos holerites vigentes no mês.
-  const holeritesDoMes = useMemo(() => holeritesVigentes(holerites, year, monthIdx), [holerites, year, monthIdx]);
-  const rendaHoleritesNum = useMemo(() => holeritesDoMes.reduce((s, h) => s + liquidoHolerite(h), 0), [holeritesDoMes]);
   // Rendas extras estruturadas (por membro) do mês.
   const extrasDoMes = useMemo(() => rendasExtrasDoMes(rendasExtras, year, monthIdx), [rendasExtras, year, monthIdx]);
   const rendaExtrasMembrosNum = useMemo(() => extrasDoMes.reduce((s, r) => s + (Number(r.valor) || 0), 0), [extrasDoMes]);
 
-  // Totais (o campo manual continua valendo como complemento/fallback).
-  const rendaNum = rendaManualNum + rendaHoleritesNum; // renda fixa total
-  const extraNum = extraManualNum + rendaExtrasMembrosNum; // renda extra total
+  // Renda entra SÓ pelo cadastro (holerites e rendas extras por membro). Os campos
+  // do topo são só visualização, pra não haver duplicidade.
+  const rendaNum = rendaHoleritesNum; // renda fixa total = holerites
+  const extraNum = rendaExtrasMembrosNum; // renda extra total = rendas extras por membro
   const totalRenda = rendaNum + extraNum;
   const despesasLancadas = useMemo(() => despesas.reduce((s, d) => s + d.valor, 0), [despesas]);
 

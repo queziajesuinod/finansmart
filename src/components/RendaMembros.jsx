@@ -82,7 +82,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
 
   // ── Renda extra ───────────────────────────────────────────
   function salvarExtra() {
-    const ex = { id: extraForm.id || genId(), membroId: extraForm.membroId || null, mesRef: mr, descricao: (extraForm.descricao || "").trim() || "Renda extra", valor: n(extraForm.valor) };
+    const ex = { id: extraForm.id || genId(), membroId: extraForm.membroId || null, mesRef: extraForm.mesRef || mr, descricao: (extraForm.descricao || "").trim() || "Renda extra", valor: n(extraForm.valor), recorrente: extraForm.recorrente === true };
     setRendasExtras([...(rendasExtras || []).filter((x) => x.id !== ex.id), ex]);
     setExtraForm(null);
   }
@@ -176,18 +176,26 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
             {exs.map((r) => (
               <div key={r.id} style={{ background: "var(--fill-2)", borderRadius: 9, padding: "9px 11px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, border: `1px solid ${C.border}` }}>
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: `color-mix(in srgb, ${C.accent} 12%, transparent)`, color: C.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Plus size={15} /></div>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.descricao || "Renda extra"}</div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.descricao || "Renda extra"}{r.recorrente ? (r.mesRef !== mr ? <span style={{ color: C.accent }}> · desde {labelMesRef(r.mesRef)}</span> : <span style={{ color: C.muted }}> · mensal</span>) : null}</div>
                 <span style={{ fontSize: 13, fontWeight: 800, color: C.accent, flexShrink: 0 }}>{fmt(Number(r.valor) || 0)}</span>
-                <button onClick={() => removerExtra(r.id)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Trash2 size={14} /></button>
+                <button onClick={() => removerExtra(r.id)} title="Excluir (para todos os meses)" style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Trash2 size={14} /></button>
               </div>
             ))}
 
             {extraForm && mesmo(extraForm.membroId, b.key) && (
-              <div style={{ display: "flex", gap: 6, margin: "6px 0" }}>
-                <Inp placeholder="Descrição (ex.: freela)" value={extraForm.descricao} onChange={(e) => setExtraForm({ ...extraForm, descricao: e.target.value })} style={{ flex: 1, padding: "8px 10px", fontSize: 12 }} />
-                <MoneyInput placeholder="0,00" value={extraForm.valor} onChange={(e) => setExtraForm({ ...extraForm, valor: e.target.value })} style={{ width: 110, padding: "8px 10px", fontSize: 12 }} />
-                <button onClick={salvarExtra} style={{ width: 34, flexShrink: 0, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.emerald, cursor: "pointer" }}><Check size={15} /></button>
-                <button onClick={() => setExtraForm(null)} style={{ width: 34, flexShrink: 0, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, cursor: "pointer" }}><X size={15} /></button>
+              <div style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 9, padding: 10, margin: "6px 0" }}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                  <Inp placeholder="Descrição (ex.: freela)" value={extraForm.descricao} onChange={(e) => setExtraForm({ ...extraForm, descricao: e.target.value })} style={{ flex: 1, padding: "8px 10px", fontSize: 12 }} />
+                  <MoneyInput placeholder="0,00" value={extraForm.valor} onChange={(e) => setExtraForm({ ...extraForm, valor: e.target.value })} style={{ width: 110, padding: "8px 10px", fontSize: 12 }} />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.subtle, marginBottom: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={extraForm.recorrente === true} onChange={(e) => setExtraForm({ ...extraForm, recorrente: e.target.checked })} />
+                  Repetir nos próximos meses (renda extra mensal)
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn variant="success" onClick={salvarExtra} style={{ flex: 1, padding: "8px" }}><Check size={14} style={{ marginRight: 5 }} /> Salvar</Btn>
+                  <Btn variant="ghost" onClick={() => setExtraForm(null)} style={{ padding: "8px 14px" }}>Cancelar</Btn>
+                </div>
               </div>
             )}
 

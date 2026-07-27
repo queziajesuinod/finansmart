@@ -10,6 +10,7 @@ module.exports = (sequelize, DataTypes) => {
       mesRef: { type: DataTypes.STRING, allowNull: false }, // "YYYY-MM" (MM 01-12)
       descricao: { type: DataTypes.STRING, allowNull: true },
       valor: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+      recorrente: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // repete nos meses seguintes
     },
     { tableName: "rendas_extras", indexes: [{ fields: ["userId", "mesRef"] }] }
   );

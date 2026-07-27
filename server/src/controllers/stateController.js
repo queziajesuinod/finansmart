@@ -43,7 +43,7 @@ async function getState(req, res, next) {
 
     res.json({
       holerites: holerites.map((h) => ({ id: h.id, membroId: h.membroId || null, mesRef: h.mesRef, titulo: h.titulo || "", salarioBruto: num(h.salarioBruto), descontos: Array.isArray(h.descontos) ? h.descontos : [], outrosRendimentos: Array.isArray(h.outrosRendimentos) ? h.outrosRendimentos : [], recorrente: h.recorrente !== false })),
-      rendasExtras: rendasExtras.map((r) => ({ id: r.id, membroId: r.membroId || null, mesRef: r.mesRef, descricao: r.descricao || "", valor: num(r.valor) })),
+      rendasExtras: rendasExtras.map((r) => ({ id: r.id, membroId: r.membroId || null, mesRef: r.mesRef, descricao: r.descricao || "", valor: num(r.valor), recorrente: r.recorrente === true })),
       membros: membros.map((m) => ({ id: m.id, nome: m.nome, tipo: m.tipo, parentesco: m.parentesco, cor: m.cor, ordem: m.ordem, ativo: m.ativo })),
       incomes: incomes.map((i) => ({ ano: i.ano, mes: i.mes, renda: num(i.renda), extra: num(i.extra) })),
       despesas: despesas.map((d) => ({ id: d.id, descricao: d.descricao, valor: num(d.valor), categoria: d.categoria, data: d.data, fixo: d.fixo, ano: d.ano, mes: d.mes, membroId: d.membroId || null })),
@@ -131,7 +131,7 @@ const putHolerites = replaceAll(Holerite, (h) => ({
 }));
 
 const putRendasExtras = replaceAll(RendaExtra, (r) => ({
-  membroId: membroIdOrNull(r.membroId), mesRef: String(r.mesRef || ""), descricao: r.descricao || null, valor: num(r.valor),
+  membroId: membroIdOrNull(r.membroId), mesRef: String(r.mesRef || ""), descricao: r.descricao || null, valor: num(r.valor), recorrente: r.recorrente === true,
 }));
 
 // Membros (familiares). Diferente do replaceAll genérico: PRESERVA o id vindo do

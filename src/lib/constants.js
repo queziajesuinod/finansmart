@@ -133,8 +133,13 @@ export function holeritesVigentes(holerites, year, monthIdx) {
   return [...Object.values(recorrentes), ...pontuais];
 }
 
-// Rendas extras de um mês exato (não são recorrentes).
+// Rendas extras vigentes num mês: as pontuais valem só no próprio mês; as
+// recorrentes valem do seu mesRef em diante (até serem excluídas).
 export function rendasExtrasDoMes(rendasExtras, year, monthIdx) {
-  const mr = mesRefDe(year, monthIdx);
-  return (Array.isArray(rendasExtras) ? rendasExtras : []).filter((r) => r.mesRef === mr);
+  const alvo = year * 12 + monthIdx;
+  return (Array.isArray(rendasExtras) ? rendasExtras : []).filter((r) => {
+    const idx = idxDeMesRef(r.mesRef);
+    if (idx == null) return false;
+    return r.recorrente ? idx <= alvo : idx === alvo;
+  });
 }

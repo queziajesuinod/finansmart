@@ -14,27 +14,23 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       {/* Renda */}
       <Card style={{ marginBottom: 14 }}>
         <STitle>Renda de {MONTH_NAMES[monthIdx]} de {year}</STitle>
+        {/* Renda é só VISUALIZAÇÃO — entra pelo cadastro abaixo (holerites e rendas extras). */}
         <div className="income-grid">
-          {/* Salário / Renda fixa — herda o mês anterior automaticamente */}
           <div>
-            <Label>Salário / Renda fixa</Label>
+            <Label>Renda fixa (holerites)</Label>
             <div className="money-field">
               <span style={{ color: C.indigo, fontWeight: 700, fontSize: 13 }}>R$</span>
-              <MoneyInput placeholder="0,00" value={rendaStr} onChange={(e) => setIncome("renda", e.target.value)} style={{ flex: 1, width: "auto", padding: 0, background: "transparent", border: "none", borderRadius: 0, fontSize: 22, fontWeight: 800, color: rendaHerdada ? C.subtle : C.text }} />
+              <span style={{ flex: 1, fontSize: 22, fontWeight: 800, color: rendaNum > 0 ? C.text : C.muted }}>{fmt(rendaNum).replace(/^R\$\s*/, "")}</span>
             </div>
-            {rendaHerdada ? (
-              <div style={{ fontSize: 10, color: C.muted, marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}><RefreshCw size={11} /> mantido de {salarioLabel} · recebeu aumento? é só digitar o novo valor</div>
-            ) : (salarioVig && salarioVig.valor !== "" ? (
-              <div onClick={() => setIncome("renda", "")} style={{ fontSize: 10, color: C.accent, cursor: "pointer", marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5 }}><Undo2 size={11} /> voltar a herdar de {salarioLabel}</div>
-            ) : null)}
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}><Wallet size={11} /> Atualize pelos holerites no cadastro abaixo.</div>
           </div>
-          {/* Renda extra — variável, por mês */}
           <div>
             <Label>Renda extra</Label>
             <div className="money-field">
               <span style={{ color: C.emerald, fontWeight: 700, fontSize: 13 }}>R$</span>
-              <MoneyInput placeholder="0,00" value={income.extra} onChange={(e) => setIncome("extra", e.target.value)} style={{ flex: 1, width: "auto", padding: 0, background: "transparent", border: "none", borderRadius: 0, fontSize: 22, fontWeight: 800, color: C.text }} />
+              <span style={{ flex: 1, fontSize: 22, fontWeight: 800, color: extraNum > 0 ? C.text : C.muted }}>{fmt(extraNum).replace(/^R\$\s*/, "")}</span>
             </div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}><Wallet size={11} /> Atualize nas rendas extras abaixo (pode adicionar várias).</div>
           </div>
         </div>
         {totalRenda > 0 && (
@@ -47,13 +43,6 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
               <div style={{ position: "absolute", height: "100%", width: `${Math.min(100, pctMes)}%`, background: "var(--track)", borderRadius: 999 }} />
               <div style={{ position: "absolute", height: "100%", width: `${Math.min(100, pctGasto)}%`, background: pctGasto > 85 ? C.red : C.accent, borderRadius: 999, transition: "width .5s" }} />
             </div>
-          </div>
-        )}
-        {(rendaHoleritesNum > 0 || rendaExtrasMembrosNum > 0) && (
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 12, lineHeight: 1.5 }}>
-            Renda fixa total <strong style={{ color: C.emerald }}>{fmt(rendaNum)}</strong>
-            {rendaHoleritesNum > 0 ? <> — inclui {fmt(rendaHoleritesNum)} de holerites{rendaManualNum > 0 ? ` + ${fmt(rendaManualNum)} do campo acima` : ""}.</> : "."}
-            {rendaExtrasMembrosNum > 0 ? <> Renda extra inclui {fmt(rendaExtrasMembrosNum)} por pessoa.</> : null}
           </div>
         )}
       </Card>
