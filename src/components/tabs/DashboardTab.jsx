@@ -98,7 +98,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
           <STitle>Composição das despesas do mês</STitle>
           {[
             { l: "Lançamentos / gastos variáveis", v: despesasLancadas, c: C.amber, Icon: ReceiptText },
-            { l: "Faturas de cartão", v: faturasCartaoMes, c: C.indigo, Icon: CreditCard },
+            { l: "Cartão pago no mês", v: faturasCartaoMes, c: C.indigo, Icon: CreditCard },
             { l: "Parcelas de empréstimos", v: parcelasMensais, c: C.rose, Icon: Landmark },
             { l: "Parcelas avulsas", v: parcelasCartaoMes, c: C.cyan, Icon: ShoppingBag },
           ].filter((x) => x.v > 0).map((x) => (

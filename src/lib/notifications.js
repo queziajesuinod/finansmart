@@ -76,6 +76,21 @@ export function gerarNotificacoes(ctx) {
     }
   }
 
+  // 5b) Faturas de meses anteriores sem baixa (pagamento não registrado). Quando
+  // vira o mês, lembra de conciliar quanto foi pago para atualizar o limite.
+  const viewedIdx = year * 12 + monthIdx;
+  const semBaixa = (cartoes || []).filter((c) => {
+    const [y, m] = String(c.mesRef || "").split("-").map(Number);
+    if (isNaN(y) || isNaN(m)) return false;
+    return (y * 12 + m) < viewedIdx && c.valorPago == null;
+  });
+  if (semBaixa.length) {
+    const nSb = semBaixa.length;
+    add({ id: `fatura-baixa-${periodo}`, severidade: "media", tab: "cartoes",
+      titulo: `${nSb} fatura${nSb > 1 ? "s" : ""} sem baixa`,
+      msg: `${nSb} fatura${nSb > 1 ? "s" : ""} de cartão de meses anteriores ainda sem registro de pagamento. Informe quanto pagou (total ou parcial) para atualizar o limite disponível.` });
+  }
+
   // 6) Parcelas encerrando este mês.
   if ((parcelVencendoMes || []).length) {
     const n = parcelVencendoMes.length;

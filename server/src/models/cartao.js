@@ -12,6 +12,8 @@ module.exports = (sequelize, DataTypes) => {
       vencimento: { type: DataTypes.STRING, allowNull: true },
       mesRef: { type: DataTypes.STRING, allowNull: false }, // "ano-mes" (ex: "2026-5")
       total: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+      // Quanto da fatura foi pago (baixa). null = não conciliada; nº = valor quitado.
+      valorPago: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
       somaCompras: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
       portadores: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
       // Pagamentos/quitações da fatura ({ id, data, valor, descricao }). Não são

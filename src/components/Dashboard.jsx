@@ -165,7 +165,10 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     }, 0);
   }, [parcelados, cartoes, year, monthIdx]);
 
-  const faturasCartaoMes = useMemo(() => (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`).reduce((s, c) => s + c.total, 0), [cartoes, year, monthIdx]);
+  // Regime de CAIXA: o cartão pesa no gasto do mês pelo que foi PAGO (valorPago).
+  // Fatura ainda não conciliada (valorPago null) conta cheia, como antes (obrigação
+  // pendente); ao registrar a baixa, passa a contar só o que foi quitado.
+  const faturasCartaoMes = useMemo(() => (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`).reduce((s, c) => s + (c.valorPago == null ? (c.total || 0) : (Number(c.valorPago) || 0)), 0), [cartoes, year, monthIdx]);
 
   const totalDespesas = despesasLancadas + parcelasMensais + parcelasCartaoMes + faturasCartaoMes;
 

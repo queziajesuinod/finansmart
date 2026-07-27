@@ -12,8 +12,26 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
   const [filtroPort, setFiltroPort] = useState({});
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({});
+  const [baixaId, setBaixaId] = useState(null);
+  const [baixaForm, setBaixaForm] = useState({ tipo: "total", valor: "" });
 
   function remover(id) { setCartoes(cartoes.filter((c) => c.id !== id)); }
+  // ── Baixa da fatura (regime de caixa): registra quanto foi pago ──
+  function abrirBaixa(c) {
+    const pago = c.valorPago;
+    const parcial = pago != null && pago < (c.total || 0) - 0.01;
+    setBaixaId(c.id);
+    setBaixaForm({ tipo: parcial ? "parcial" : "total", valor: pago != null ? String(pago) : "" });
+  }
+  function confirmarBaixa(c) {
+    const v = baixaForm.tipo === "total" ? (c.total || 0) : (parseFloat((baixaForm.valor || "").replace(",", ".")) || 0);
+    setCartoes(cartoes.map((x) => (x.id === c.id ? { ...x, valorPago: v } : x)));
+    setBaixaId(null);
+  }
+  function limparBaixa(c) {
+    setCartoes(cartoes.map((x) => (x.id === c.id ? { ...x, valorPago: null } : x)));
+    setBaixaId(null);
+  }
   function abrirEdicao(c) {
     setEditId(c.id);
     setEditForm({ nome: c.nome || "", banco: c.banco || "", limite: c.limite ? String(c.limite) : "", vencimentoDia: c.vencimentoDia ? String(c.vencimentoDia) : "" });
@@ -41,10 +59,28 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
   const outrosMeses = (cartoes || []).length - faturasMes.length;
   const mesNome = monthIdx != null ? MONTH_NAMES[monthIdx] : "";
 
+  // Saldo devedor por CARTÃO FÍSICO (agrupado por banco+nome), somando o que
+  // não foi pago em TODAS as faturas dele. Limite disponível = limite − saldo devedor.
+  const keyCartao = (c) => `${(c.banco || "").toLowerCase().trim()}|${(c.nome || "").toLowerCase().trim()}`;
+  const saldoInfo = {};
+  (cartoes || []).forEach((c) => {
+    const k = keyCartao(c);
+    const devedor = Math.max(0, (c.total || 0) - (c.valorPago == null ? 0 : Number(c.valorPago) || 0));
+    if (!saldoInfo[k]) saldoInfo[k] = { saldoDevedor: 0, limite: 0 };
+    saldoInfo[k].saldoDevedor += devedor;
+    saldoInfo[k].limite = Math.max(saldoInfo[k].limite, c.limite || 0);
+  });
+  (cardProfiles || []).forEach((p) => {
+    const k = `${(p.banco || "").toLowerCase().trim()}|${(p.nome || "").toLowerCase().trim()}`;
+    if (saldoInfo[k]) saldoInfo[k].limite = Math.max(saldoInfo[k].limite, p.limite || 0);
+  });
+  const dispDe = (k) => Math.max(0, (saldoInfo[k] ? saldoInfo[k].limite - saldoInfo[k].saldoDevedor : 0));
+
   const semFaturasMes = !faturasMes.length;
   const totalFaturas = faturasMes.reduce((s, c) => s + c.total, 0);
-  const totalLimite = faturasMes.reduce((s, c) => s + (c.limite || 0), 0);
-  const totalDisponivel = faturasMes.reduce((s, c) => s + Math.max(0, (c.limite || 0) - c.total), 0);
+  const cartoesMesKeys = [...new Set(faturasMes.map(keyCartao))];
+  const totalSaldoDevedor = cartoesMesKeys.reduce((s, k) => s + (saldoInfo[k] ? saldoInfo[k].saldoDevedor : 0), 0);
+  const totalDisponivel = cartoesMesKeys.reduce((s, k) => s + dispDe(k), 0);
 
   return (
     <div>
@@ -62,7 +98,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
       <div className="stat-grid" style={{ marginBottom: 16 }}>
         {[
           { l: `Faturas de ${mesNome}`, v: fmt(totalFaturas), c: C.amber, Icon: ReceiptText },
-          { l: "Limite total", v: fmt(totalLimite), c: C.indigo, Icon: CreditCard },
+          { l: "Saldo devedor", v: fmt(totalSaldoDevedor), c: C.red, Icon: CreditCard },
           { l: "Disponível", v: fmt(totalDisponivel), c: C.emerald, Icon: Wallet },
         ].map((x) => (
           <Card key={x.l} style={{ padding: "12px 13px" }}>
@@ -81,6 +117,14 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
         const limite = cartao.limite || 0;
         const disp = Math.max(0, limite - usado);
         const pctUso = limite > 0 ? (usado / limite) * 100 : 0;
+        // Baixa/saldo por cartão físico.
+        const kFis = keyCartao(cartao);
+        const dispCartao = dispDe(kFis);
+        const limiteCartao = saldoInfo[kFis] ? saldoInfo[kFis].limite : 0;
+        const pago = cartao.valorPago;
+        const conciliada = pago != null;
+        const faltaPagar = Math.max(0, usado - (conciliada ? Number(pago) || 0 : 0));
+        const statusPag = !conciliada ? "aberto" : ((Number(pago) || 0) >= usado - 0.01 ? "total" : ((Number(pago) || 0) <= 0.01 ? "aberto" : "parcial"));
         const isOpen = aberto === cartao.id;
         const tabAtual = getAba(cartao.id);
         const filtro = getFiltro(cartao.id);
@@ -137,13 +181,48 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
             )}
 
             <div className="stat-grid" style={{ marginBottom: 12 }}>
-              {[{ l: "Valor da fatura", v: fmt(usado), c: C.amber }, { l: "Limite total", v: limite > 0 ? fmt(limite) : "—", c: C.subtle }, { l: "Disponível", v: limite > 0 ? fmt(disp) : "—", c: C.emerald }].map((x) => (
+              {[{ l: "Valor da fatura", v: fmt(usado), c: C.amber }, { l: "Pago", v: conciliada ? fmt(Number(pago) || 0) : "—", c: C.emerald }, { l: "Disponível no cartão", v: limiteCartao > 0 ? fmt(dispCartao) : "—", c: C.emerald }].map((x) => (
                 <div key={x.l} style={{ background: "var(--fill-2)", borderRadius: 8, padding: "9px 11px" }}>
                   <Label>{x.l}</Label>
                   <div style={{ fontSize: 13, fontWeight: 700, color: x.c }}>{x.v}</div>
                 </div>
               ))}
             </div>
+
+            {/* Baixa da fatura — regime de caixa: registra quanto foi pago */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+              {statusPag === "total" && <Badge label="Fatura paga" color={C.emerald} Icon={WalletCards} />}
+              {statusPag === "parcial" && <Badge label={`Parcial · falta ${fmt(faltaPagar)}`} color={C.indigo} Icon={WalletCards} />}
+              {statusPag === "aberto" && <Badge label="Em aberto" color={C.amber} Icon={WalletCards} />}
+              {baixaId !== cartao.id && (
+                <button onClick={() => abrirBaixa(cartao)} style={{ marginLeft: "auto", background: tint(C.accent, 12), border: `1px solid ${tint(C.accent, 24)}`, color: C.accent, borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{conciliada ? "Editar pagamento" : "Registrar pagamento"}</button>
+              )}
+            </div>
+
+            {baixaId === cartao.id && (
+              <div style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <Label>Quanto você pagou desta fatura ({fmt(usado)})?</Label>
+                  <button aria-label="Fechar" onClick={() => setBaixaId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer" }}><X size={15} /></button>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  {[{ id: "total", l: "Paguei tudo" }, { id: "parcial", l: "Paguei parte" }].map((o) => (
+                    <button key={o.id} onClick={() => setBaixaForm((f) => ({ ...f, tipo: o.id }))} style={{ flex: 1, padding: "9px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, border: `1px solid ${baixaForm.tipo === o.id ? tint(C.accent, 40) : C.border}`, background: baixaForm.tipo === o.id ? tint(C.accent, 12) : "transparent", color: baixaForm.tipo === o.id ? C.accent : C.muted }}>{o.l}</button>
+                  ))}
+                </div>
+                {baixaForm.tipo === "parcial" && (
+                  <div style={{ marginBottom: 10 }}>
+                    <Label>Valor pago</Label>
+                    <MoneyInput placeholder="0,00" value={baixaForm.valor} onChange={(e) => setBaixaForm((f) => ({ ...f, valor: e.target.value }))} />
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 5 }}>O que faltar ({fmt(Math.max(0, usado - (parseFloat((baixaForm.valor || "").replace(",", ".")) || 0)))}) vira saldo devedor e volta na próxima fatura.</div>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn variant="success" onClick={() => confirmarBaixa(cartao)} style={{ flex: 1 }}><IcoTxt Icon={WalletCards}>Confirmar</IcoTxt></Btn>
+                  {conciliada && <Btn variant="ghost" onClick={() => limparBaixa(cartao)}>Desfazer baixa</Btn>}
+                </div>
+              </div>
+            )}
             {limite > 0 && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginBottom: 4 }}>
