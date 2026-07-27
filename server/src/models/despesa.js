@@ -13,6 +13,7 @@ module.exports = (sequelize, DataTypes) => {
       ano: { type: DataTypes.INTEGER, allowNull: false },
       mes: { type: DataTypes.INTEGER, allowNull: false }, // 0-11
       fixo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      membroId: { type: DataTypes.STRING, allowNull: true },
     },
     { tableName: "despesas", indexes: [{ fields: ["userId", "ano", "mes"] }] }
   );

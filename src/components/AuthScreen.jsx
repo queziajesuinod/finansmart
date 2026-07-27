@@ -3,24 +3,38 @@ import { useState, useEffect } from "react";
 import { C } from "../lib/constants";
 import { Card, Label, Inp, Btn, STitle } from "./ui";
 import { LogoTile } from "./Logo.jsx";
-import { register, login, authConfig, googleLoginUrl } from "../lib/api";
+import { register, login, authConfig, googleLoginUrl, getPlans } from "../lib/api";
 import { maskCPF, maskPhone } from "../lib/masks";
+import { fmt } from "../lib/constants";
+import { Trash2, UserPlus, Users } from "../lib/icons.jsx";
 
 export default function AuthScreen({ onLogin }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ nome: "", email: "", senha: "", cpf: "", telefone: "" });
+  const [dependentes, setDependentes] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
   useEffect(() => {
     authConfig().then((c) => setGoogleEnabled(Boolean(c.googleEnabled)));
+    getPlans().then((ps) => setPlans(ps || [])).catch(() => {});
     // Mostra erro se o callback do Google falhou.
     const p = new URLSearchParams(window.location.search);
     if (p.get("erro") === "google") setErr("Não foi possível entrar com o Google. Tente novamente.");
   }, []);
 
   const onField = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  // Plano representativo para o preview de preço (o mais completo cadastrado).
+  const planoRef = plans.length ? plans.reduce((a, b) => (b.precoCentavos > a.precoCentavos ? b : a), plans[0]) : null;
+  const nDeps = dependentes.filter((d) => d.nome.trim()).length;
+  const precoPreview = planoRef ? (planoRef.precoCentavos + nDeps * (planoRef.precoDependenteCentavos || 0)) / 100 : null;
+
+  const addDep = () => setDependentes((d) => [...d, { nome: "" }]);
+  const updDep = (i, v) => setDependentes((d) => d.map((x, j) => (j === i ? { nome: v } : x)));
+  const rmDep = (i) => setDependentes((d) => d.filter((_, j) => j !== i));
 
   async function handleSubmit() {
     setErr("");
@@ -30,7 +44,8 @@ export default function AuthScreen({ onLogin }) {
       if (!email || !form.senha) throw new Error("Preencha e-mail e senha.");
       if (mode === "register") {
         if (!form.nome.trim()) throw new Error("Informe seu nome.");
-        const data = await register({ nome: form.nome.trim(), email, senha: form.senha, cpf: form.cpf.trim(), telefone: form.telefone.trim() });
+        const deps = dependentes.map((d) => ({ nome: d.nome.trim() })).filter((d) => d.nome);
+        const data = await register({ nome: form.nome.trim(), email, senha: form.senha, cpf: form.cpf.trim(), telefone: form.telefone.trim(), dependentes: deps });
         onLogin(data);
       } else {
         const data = await login({ email, senha: form.senha });
@@ -83,6 +98,24 @@ export default function AuthScreen({ onLogin }) {
                   <Label>Telefone</Label>
                   <Inp placeholder="(00) 00000-0000" inputMode="tel" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} />
                 </div>
+              </div>
+
+              {/* Familiares / dependentes (opcional) */}
+              <div style={{ marginBottom: 14, background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+                <Label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}><Users size={13} /> Familiares (opcional)</Label>
+                {dependentes.map((d, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <Inp placeholder={`Nome do dependente ${i + 1}`} value={d.nome} onChange={(e) => updDep(i, e.target.value)} style={{ flex: 1 }} />
+                    <button className="mini-act" aria-label="Remover" onClick={() => rmDep(i)} style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                <button onClick={addDep} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: `1px dashed ${C.border}`, color: C.accent, borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}><UserPlus size={14} /> Adicionar familiar</button>
+                {planoRef && (
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 10, lineHeight: 1.6 }}>
+                    Plano {planoRef.nome}: {fmt(planoRef.precoCentavos / 100)}/mês{planoRef.precoDependenteCentavos ? ` + ${fmt(planoRef.precoDependenteCentavos / 100)} por dependente` : ""}.
+                    {nDeps > 0 && <span style={{ color: C.accent, fontWeight: 700 }}> Estimado: {fmt(precoPreview)}/mês</span>}
+                  </div>
+                )}
               </div>
             </>
           )}

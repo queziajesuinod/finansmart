@@ -75,7 +75,7 @@ export async function getState() {
     const key = `${d.ano}-${d.mes}`;
     (despesas[key] = despesas[key] || []).push({
       id: d.id, descricao: d.descricao, valor: Number(d.valor) || 0,
-      categoria: d.categoria, data: d.data, fixo: !!d.fixo,
+      categoria: d.categoria, data: d.data, fixo: !!d.fixo, membroId: d.membroId || null,
     });
   }
 
@@ -88,6 +88,7 @@ export async function getState() {
     goals: s.goals || [],
     categoryRules: s.categoryRules || {},
     cardProfiles: s.cardProfiles || [],
+    membros: s.membros || [],
   };
 }
 
@@ -111,7 +112,7 @@ export function saveDespesas(map) {
   for (const [key, list] of Object.entries(map || {})) {
     const { ano, mes } = parseKey(key);
     for (const d of list || []) {
-      arr.push({ descricao: d.descricao, valor: d.valor, categoria: d.categoria, data: d.data, fixo: d.fixo, ano, mes });
+      arr.push({ descricao: d.descricao, valor: d.valor, categoria: d.categoria, data: d.data, fixo: d.fixo, ano, mes, membroId: d.membroId || null });
     }
   }
   return request("PUT", "/api/despesas", arr);
@@ -123,6 +124,7 @@ export function saveCartoes(arr) { return request("PUT", "/api/cartoes", arr || 
 export function saveGoals(arr) { return request("PUT", "/api/goals", arr || []); }
 export function saveCategoryRules(map) { return request("PUT", "/api/category-rules", map || {}); }
 export function saveCardProfiles(arr) { return request("PUT", "/api/card-profiles", arr || []); }
+export function saveMembros(arr) { return request("PUT", "/api/membros", arr || []); }
 
 // ─── Leitura de fatura com IA (reforço) ──────────────────────
 // Envia o texto já extraído do PDF (o PDF não sai do dispositivo) e recebe as

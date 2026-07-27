@@ -4,8 +4,9 @@ import { C, CATEGORIES, fmt, fmtPct, catById, genId, tint } from "../../lib/cons
 import { Card, Label, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save, Pencil, X } from "../../lib/icons.jsx";
 import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
+import { nomeMembro, membroEfetivo } from "../Membros.jsx";
 
-export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles }) {
+export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles, membros = [] }) {
   const [aberto, setAberto] = useState(null);
   const [aba, setAba] = useState({});
   const [filtroPort, setFiltroPort] = useState({});
@@ -68,12 +69,20 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
         const isOpen = aberto === cartao.id;
         const tabAtual = getAba(cartao.id);
         const filtro = getFiltro(cartao.id);
-        const portadores = cartao.portadores || [...new Set((cartao.compras || []).map((c) => c.portador || "Titular"))];
-        const multiPortador = portadores.length > 1;
-        const comprasFiltradas = filtro === "todos" ? cartao.compras : cartao.compras.filter((c) => (c.portador || "Titular") === filtro);
+        // Agrupa pelo MEMBRO vinculado (resolvendo membroId). Sem membros cadastrados,
+        // cai no portador cru da fatura. Assim "Thiago → Quézia (principal)" aparece como Quézia.
+        const usaMembros = Array.isArray(membros) && membros.length > 0;
+        const grupoIdDe = (c) => usaMembros ? (membroEfetivo(c.membroId, membros) || "principal") : (c.portador || "Titular");
+        const grupoNomeDe = (c) => usaMembros ? nomeMembro(c.membroId, membros) : (c.portador || "Titular");
+        const gruposMap = new Map();
+        (cartao.compras || []).forEach((c) => { const id = grupoIdDe(c); if (!gruposMap.has(id)) gruposMap.set(id, grupoNomeDe(c)); });
+        const grupos = [...gruposMap.entries()].map(([id, nome]) => ({ id, nome }));
+        const multiPortador = grupos.length > 1;
+        const comprasFiltradas = filtro === "todos" ? cartao.compras : cartao.compras.filter((c) => grupoIdDe(c) === filtro);
         const totalFiltrado = comprasFiltradas.reduce((s, c) => s + c.valor, 0);
+        const filtroNome = filtro === "todos" ? "Total" : ((grupos.find((g) => g.id === filtro) || {}).nome || filtro);
         const porCat = CATEGORIES.map((c) => ({ ...c, total: comprasFiltradas.filter((x) => x.categoria === c.id).reduce((s, x) => s + x.valor, 0), qtd: comprasFiltradas.filter((x) => x.categoria === c.id).length })).filter((c) => Math.abs(c.total) > 0.001).sort((a, b) => b.total - a.total);
-        const porPortador = portadores.map((p) => ({ portador: p, total: cartao.compras.filter((c) => (c.portador || "Titular") === p).reduce((s, c) => s + c.valor, 0), qtd: cartao.compras.filter((c) => (c.portador || "Titular") === p).length })).sort((a, b) => b.total - a.total);
+        const porPortador = grupos.map((g) => ({ id: g.id, nome: g.nome, total: cartao.compras.filter((c) => grupoIdDe(c) === g.id).reduce((s, c) => s + c.valor, 0), qtd: cartao.compras.filter((c) => grupoIdDe(c) === g.id).length })).sort((a, b) => b.total - a.total);
         return (
           <Card key={cartao.id} style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
@@ -81,7 +90,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                 <CardBrandTile banco={cartao.banco} nome={cartao.nome} w={46} h={32} radius={7} iconSize={17} />
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{cartao.nome}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{cartao.banco}{cartao.vencimentoDia ? ` · vence dia ${cartao.vencimentoDia} de cada mês` : (cartao.vencimento ? ` · vence ${new Date(cartao.vencimento + "T12:00:00").toLocaleDateString("pt-BR")}` : "")} · {cartao.compras.length} compras{multiPortador ? ` · ${portadores.length} portadores` : ""}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{cartao.banco}{cartao.vencimentoDia ? ` · vence dia ${cartao.vencimentoDia} de cada mês` : (cartao.vencimento ? ` · vence ${new Date(cartao.vencimento + "T12:00:00").toLocaleDateString("pt-BR")}` : "")} · {cartao.compras.length} compras{multiPortador ? ` · ${grupos.length} ${usaMembros ? "membros" : "portadores"}` : ""}</div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
@@ -134,10 +143,10 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
               <div style={{ marginTop: 14 }}>
                 {multiPortador && (
                   <div style={{ background: "rgba(139,92,246,0.06)", border: `1px solid rgba(139,92,246,0.2)`, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
-                    <Label>Gastos por portador</Label>
+                    <Label>Gastos por {usaMembros ? "membro" : "portador"}</Label>
                     {porPortador.map((p) => (
-                      <div key={p.portador} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 7 }}>
-                        <span style={{ fontSize: 12, color: C.subtle, display: "inline-flex", alignItems: "center", gap: 6 }}><Users size={13} /> {p.portador} <span style={{ fontSize: 10, color: C.muted }}>({p.qtd})</span></span>
+                      <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 7 }}>
+                        <span style={{ fontSize: 12, color: C.subtle, display: "inline-flex", alignItems: "center", gap: 6 }}><Users size={13} /> {p.nome} <span style={{ fontSize: 10, color: C.muted }}>({p.qtd})</span></span>
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.violet }}>{fmt(p.total)}</span>
                       </div>
                     ))}
@@ -146,8 +155,8 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
 
                 {multiPortador && (
                   <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>
-                    {["todos", ...portadores].map((p) => (
-                      <button key={p} onClick={() => setFiltroPort((prev) => ({ ...prev, [cartao.id]: p }))} style={{ padding: "6px 12px", borderRadius: 20, border: `1px solid ${filtro === p ? C.violet : C.border}`, background: filtro === p ? "rgba(139,92,246,0.2)" : "transparent", color: filtro === p ? C.violet : C.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{p === "todos" ? "Todos" : p.split(" ")[0]}</button>
+                    {[{ id: "todos", nome: "Todos" }, ...grupos].map((g) => (
+                      <button key={g.id} onClick={() => setFiltroPort((prev) => ({ ...prev, [cartao.id]: g.id }))} style={{ padding: "6px 12px", borderRadius: 20, border: `1px solid ${filtro === g.id ? C.violet : C.border}`, background: filtro === g.id ? "rgba(139,92,246,0.2)" : "transparent", color: filtro === g.id ? C.violet : C.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{g.id === "todos" ? "Todos" : g.nome.split(" ")[0]}</button>
                     ))}
                   </div>
                 )}
@@ -170,14 +179,14 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                             : <MerchantIcon desc={compra.descricao} cat={cat.id} size={17} box={34} style={{ borderRadius: 9 }} />}
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{compra.descricao}</div>
-                            <div style={{ fontSize: 10, color: C.muted }}>{cat.label} · {new Date(compra.data + "T12:00:00").toLocaleDateString("pt-BR")}{compra.parcelas > 1 ? ` · ${compra.parcelaAtual}/${compra.parcelas}` : ""}{multiPortador && compra.portador ? ` · ${compra.portador.split(" ")[0]}` : ""}</div>
+                            <div style={{ fontSize: 10, color: C.muted }}>{cat.label} · {new Date(compra.data + "T12:00:00").toLocaleDateString("pt-BR")}{compra.parcelas > 1 ? ` · ${compra.parcelaAtual}/${compra.parcelas}` : ""}{multiPortador ? ` · ${grupoNomeDe(compra).split(" ")[0]}` : ""}</div>
                           </div>
                           <div style={{ fontSize: 13, fontWeight: 800, color: estorno ? C.emerald : "var(--danger)", flexShrink: 0 }}>{estorno ? "+ " : ""}{fmt(Math.abs(compra.valor))}</div>
                         </div>
                       );
                     })}
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
-                      <span style={{ fontSize: 12, color: C.muted }}>{filtro === "todos" ? "Total" : filtro.split(" ")[0]} · {comprasFiltradas.length} compras</span>
+                      <span style={{ fontSize: 12, color: C.muted }}>{filtroNome.split(" ")[0]} · {comprasFiltradas.length} compras</span>
                       <span style={{ fontSize: 14, fontWeight: 800, color: C.amber }}>{fmt(totalFiltrado)}</span>
                     </div>
                   </div>
@@ -198,7 +207,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                       </div>
                     ))}
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>Total{filtro !== "todos" ? ` (${filtro.split(" ")[0]})` : " da fatura"}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>Total{filtro !== "todos" ? ` (${filtroNome.split(" ")[0]})` : " da fatura"}</span>
                       <span style={{ fontSize: 14, fontWeight: 800, color: C.amber }}>{fmt(totalFiltrado)}</span>
                     </div>
                   </div>

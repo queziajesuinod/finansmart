@@ -10,6 +10,7 @@ import {
   ScrollText, Search, WalletCards, Component,
   Undo2, CircleCheck, TriangleAlert, SquareCheck, Square, Flag, Calendar,
   Lock, User, PartyPopper, CircleUser, KeyRound, Sparkles, Bell, CheckCheck,
+  UserPlus, Star,
 } from "lucide-react";
 
 const TAB = {
@@ -41,6 +42,7 @@ export {
   ScrollText, Search, WalletCards, Component, Package,
   Undo2, CircleCheck, TriangleAlert, SquareCheck, Square, Flag, Calendar,
   Lock, User, FileText, PartyPopper, CircleUser, KeyRound, Sparkles, Bell, CheckCheck, Smartphone,
+  UserPlus, Star,
 };
 
 // (FileText já é importado acima para a aba "importar")

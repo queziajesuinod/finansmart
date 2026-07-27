@@ -21,5 +21,6 @@ router.put("/cartoes", c.putCartoes);
 router.put("/goals", c.putGoals);
 router.put("/category-rules", c.putCategoryRules);
 router.put("/card-profiles", c.putCardProfiles);
+router.put("/membros", c.putMembros);
 
 module.exports = router;

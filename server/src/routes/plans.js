@@ -18,6 +18,7 @@ router.get("/", async (req, res, next) => {
         nome: p.nome,
         descricao: p.descricao,
         precoCentavos: p.precoCentavos,
+        precoDependenteCentavos: p.precoDependenteCentavos,
         intervalo: p.intervalo,
         modulos: (p.modules || []).map((m) => ({ chave: m.chave, nome: m.nome })),
       }))

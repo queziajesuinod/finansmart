@@ -103,15 +103,15 @@ function ModuleRow({ m, reload, flash, fail }) {
 
 // ─── PLANOS ──────────────────────────────────────────────────
 function PlansPanel({ plans, modules, reload, flash, fail }) {
-  const [form, setForm] = useState({ nome: "", slug: "", preco: "", intervalo: "month", chaves: [] });
+  const [form, setForm] = useState({ nome: "", slug: "", preco: "", precoDep: "", intervalo: "month", chaves: [] });
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const toggle = (chave) => setForm((p) => ({ ...p, chaves: p.chaves.includes(chave) ? p.chaves.filter((c) => c !== chave) : [...p.chaves, chave] }));
 
   async function add() {
     if (!form.nome.trim() || !form.slug.trim()) return;
     try {
-      await admin.planCreate({ nome: form.nome.trim(), slug: form.slug.trim(), precoCentavos: Math.round((parseFloat(form.preco) || 0) * 100), intervalo: form.intervalo, moduloChaves: form.chaves });
-      setForm({ nome: "", slug: "", preco: "", intervalo: "month", chaves: [] });
+      await admin.planCreate({ nome: form.nome.trim(), slug: form.slug.trim(), precoCentavos: Math.round((parseFloat(form.preco) || 0) * 100), precoDependenteCentavos: Math.round((parseFloat(form.precoDep) || 0) * 100), intervalo: form.intervalo, moduloChaves: form.chaves });
+      setForm({ nome: "", slug: "", preco: "", precoDep: "", intervalo: "month", chaves: [] });
       flash("Plano criado."); reload();
     } catch (e) { fail(e); }
   }
@@ -123,9 +123,11 @@ function PlansPanel({ plans, modules, reload, flash, fail }) {
         <div className="form-grid-2" style={{ marginBottom: 10 }}>
           <Field label="Nome"><Inp placeholder="ex: Premium" value={form.nome} onChange={f("nome")} /></Field>
           <Field label="Slug"><Inp placeholder="ex: premium" value={form.slug} onChange={f("slug")} /></Field>
-          <Field label="Preço (R$)"><MoneyInput placeholder="0,00" value={form.preco} onChange={f("preco")} /></Field>
+          <Field label="Preço base (R$)"><MoneyInput placeholder="0,00" value={form.preco} onChange={f("preco")} /></Field>
+          <Field label="Preço por dependente (R$)"><MoneyInput placeholder="0,00" value={form.precoDep} onChange={f("precoDep")} /></Field>
           <Field label="Intervalo"><Sel value={form.intervalo} onChange={f("intervalo")}><option value="month">Mensal</option><option value="year">Anual</option></Sel></Field>
         </div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, lineHeight: 1.5 }}>O valor final do cliente = preço base + (nº de dependentes × preço por dependente).</div>
         <Label>Módulos do plano</Label>
         <ModulePicker modules={modules} selected={form.chaves} onToggle={toggle} />
         <Btn onClick={add} style={{ marginTop: 12 }}>Criar plano</Btn>
@@ -154,13 +156,14 @@ function ModulePicker({ modules, selected, onToggle }) {
 function PlanCard({ p, modules, reload, flash, fail }) {
   const [nome, setNome] = useState(p.nome);
   const [preco, setPreco] = useState((p.precoCentavos / 100).toString());
+  const [precoDep, setPrecoDep] = useState(((p.precoDependenteCentavos || 0) / 100).toString());
   const [intervalo, setIntervalo] = useState(p.intervalo);
   const [ativo, setAtivo] = useState(p.ativo);
   const [chaves, setChaves] = useState(p.modulos || []);
   const toggle = (chave) => setChaves((c) => (c.includes(chave) ? c.filter((x) => x !== chave) : [...c, chave]));
 
   async function salvar() {
-    try { await admin.planUpdate(p.id, { nome, precoCentavos: Math.round((parseFloat(preco) || 0) * 100), intervalo, ativo, moduloChaves: chaves }); flash("Plano atualizado."); reload(); } catch (e) { fail(e); }
+    try { await admin.planUpdate(p.id, { nome, precoCentavos: Math.round((parseFloat(preco) || 0) * 100), precoDependenteCentavos: Math.round((parseFloat(precoDep) || 0) * 100), intervalo, ativo, moduloChaves: chaves }); flash("Plano atualizado."); reload(); } catch (e) { fail(e); }
   }
   async function excluir() { try { await admin.planDelete(p.id); flash("Plano removido."); reload(); } catch (e) { fail(e); } }
 
@@ -171,11 +174,12 @@ function PlanCard({ p, modules, reload, flash, fail }) {
           <Badge label={p.slug} color={C.violet} />
           {!ativo && <Badge label="inativo" color={C.muted} />}
         </div>
-        <span style={{ fontSize: 13, fontWeight: 800, color: C.indigo }}>{fmt((parseFloat(preco) || 0))}/{intervalo === "month" ? "mês" : "ano"}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: C.indigo }}>{fmt((parseFloat(preco) || 0))}/{intervalo === "month" ? "mês" : "ano"}{parseFloat(precoDep) > 0 ? ` +${fmt(parseFloat(precoDep) || 0)}/dep` : ""}</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 110px", gap: 10, marginBottom: 10 }}>
-        <Field label="Nome"><Inp value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
-        <Field label="Preço (R$)"><MoneyInput value={preco} onChange={(e) => setPreco(e.target.value)} /></Field>
+      <Field label="Nome" style={{ marginBottom: 10 }}><Inp value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
+      <div className="form-grid-2" style={{ marginBottom: 10 }}>
+        <Field label="Preço base (R$)"><MoneyInput value={preco} onChange={(e) => setPreco(e.target.value)} /></Field>
+        <Field label="Preço por dependente (R$)"><MoneyInput value={precoDep} onChange={(e) => setPrecoDep(e.target.value)} /></Field>
         <Field label="Intervalo"><Sel value={intervalo} onChange={(e) => setIntervalo(e.target.value)}><option value="month">Mensal</option><option value="year">Anual</option></Sel></Field>
       </div>
       <Label>Módulos ({chaves.length})</Label>

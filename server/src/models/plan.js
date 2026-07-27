@@ -9,6 +9,8 @@ module.exports = (sequelize, DataTypes) => {
       descricao: { type: DataTypes.STRING, allowNull: true },
       // Preço em centavos, para evitar erros de ponto flutuante.
       precoCentavos: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      // Valor adicional por dependente vinculado (em centavos).
+      precoDependenteCentavos: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       intervalo: { type: DataTypes.ENUM("month", "year"), allowNull: false, defaultValue: "month" },
       stripePriceId: { type: DataTypes.STRING, allowNull: true },
       ativo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },

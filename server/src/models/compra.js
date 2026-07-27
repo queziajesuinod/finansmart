@@ -13,6 +13,7 @@ module.exports = (sequelize, DataTypes) => {
       parcelaAtual: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
       portador: { type: DataTypes.STRING, allowNull: true, defaultValue: "Titular" },
       final: { type: DataTypes.STRING, allowNull: true },
+      membroId: { type: DataTypes.STRING, allowNull: true },
     },
     { tableName: "compras", indexes: [{ fields: ["cartaoId"] }] }
   );

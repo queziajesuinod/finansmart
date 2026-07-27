@@ -1,4 +1,5 @@
-const { User } = require("../models");
+const crypto = require("crypto");
+const { User, Membro } = require("../models");
 const { hashPassword, verifyPassword } = require("../utils/password");
 const { signToken } = require("../utils/jwt");
 const { getAccessState } = require("../services/access");
@@ -10,7 +11,7 @@ function tokenFor(user) {
 // POST /auth/register — cadastro manual com dados de cobrança.
 async function register(req, res, next) {
   try {
-    const { nome, email, senha, cpf, telefone } = req.body || {};
+    const { nome, email, senha, cpf, telefone, dependentes } = req.body || {};
     const emailNorm = (email || "").trim().toLowerCase();
 
     if (!nome?.trim() || !emailNorm || !senha) {
@@ -32,6 +33,19 @@ async function register(req, res, next) {
       cpf: cpf?.trim() || null,
       telefone: telefone?.trim() || null,
     });
+
+    // Cria o membro principal (o próprio titular) + os dependentes vinculados no cadastro.
+    const membros = [{ id: crypto.randomUUID(), userId: user.id, nome: user.nome, tipo: "principal", ordem: 0, ativo: true }];
+    if (Array.isArray(dependentes)) {
+      dependentes
+        .filter((d) => d && String(d.nome || "").trim())
+        .forEach((d, i) => membros.push({
+          id: crypto.randomUUID(), userId: user.id, nome: String(d.nome).trim(),
+          tipo: "dependente", parentesco: d.parentesco ? String(d.parentesco).slice(0, 40) : null,
+          ordem: i + 1, ativo: true,
+        }));
+    }
+    await Membro.bulkCreate(membros);
 
     const access = await getAccessState(user);
     // Usuário novo entra sem assinatura ativa → liberado=false até pagar.

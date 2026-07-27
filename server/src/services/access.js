@@ -1,5 +1,13 @@
 // Centraliza o cálculo de "o usuário está liberado?" e "quais módulos ele acessa".
-const { Subscription, Plan, Module } = require("../models");
+const { Subscription, Plan, Module, Membro } = require("../models");
+
+// Conta dependentes ativos e calcula o preço efetivo (base + deps × valor/dependente).
+async function precoInfo(userId, plan) {
+  const numDependentes = await Membro.count({ where: { userId, tipo: "dependente", ativo: true } });
+  const base = plan ? plan.precoCentavos || 0 : 0;
+  const perDep = plan ? plan.precoDependenteCentavos || 0 : 0;
+  return { numDependentes, precoEfetivoCentavos: base + numDependentes * perDep };
+}
 
 // Retorna a assinatura vigente do usuário (com plano e módulos carregados), ou null.
 async function getVigenteSubscription(userId) {
@@ -41,6 +49,7 @@ async function getAccessState(user) {
   }
 
   const sub = await getVigenteSubscription(user.id);
+  const preco = await precoInfo(user.id, sub && sub.plan);
 
   // Módulos vêm SEMPRE do plano atribuído (mesmo sem pagamento em dia), para
   // que a permissão possa ser testada. Sem plano atribuído → todos os módulos.
@@ -62,6 +71,7 @@ async function getAccessState(user) {
         : null,
       plano: sub && sub.plan ? { id: sub.plan.id, slug: sub.plan.slug, nome: sub.plan.nome } : null,
       modulos: (modulosDoPlano || (await todosModulos())).sort(),
+      ...preco,
     };
   }
 
@@ -78,6 +88,7 @@ async function getAccessState(user) {
       : null,
     plano: sub && sub.plan ? { id: sub.plan.id, slug: sub.plan.slug, nome: sub.plan.nome } : null,
     modulos: modulos.sort(),
+    ...preco,
   };
 }
 

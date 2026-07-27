@@ -32,6 +32,9 @@ export default function LockedScreen({ user, onLogout }) {
                 <Badge label={`${fmt(p.precoCentavos / 100)}/${p.intervalo === "month" ? "mês" : "ano"}`} color={C.indigo} />
               </div>
               <div style={{ fontSize: 12, color: C.subtle, marginBottom: 8 }}>{p.descricao}</div>
+              {p.precoDependenteCentavos > 0 && (
+                <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, marginBottom: 8 }}>+ {fmt(p.precoDependenteCentavos / 100)}/mês por familiar dependente</div>
+              )}
               <div style={{ fontSize: 11, color: C.muted }}>{(p.modulos || []).map((m) => m.nome).join(" · ")}</div>
             </div>
           ))}

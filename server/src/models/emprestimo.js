@@ -15,6 +15,7 @@ module.exports = (sequelize, DataTypes) => {
       dataContratacao: { type: DataTypes.DATEONLY, allowNull: true },
       dataPrimeira: { type: DataTypes.DATEONLY, allowNull: true },
       dataQuitacao: { type: DataTypes.DATEONLY, allowNull: true },
+      membroId: { type: DataTypes.STRING, allowNull: true },
     },
     { tableName: "emprestimos", indexes: [{ fields: ["userId"] }] }
   );

@@ -11,6 +11,7 @@ async function setPlanModules(plan, chaves) {
 
 const planJSON = (p) => ({
   id: p.id, nome: p.nome, slug: p.slug, descricao: p.descricao, precoCentavos: p.precoCentavos,
+  precoDependenteCentavos: p.precoDependenteCentavos,
   intervalo: p.intervalo, ativo: p.ativo, modulos: (p.modules || []).map((m) => m.chave).sort(),
 });
 
@@ -58,11 +59,12 @@ async function listPlans(req, res, next) {
 }
 async function createPlan(req, res, next) {
   try {
-    const { nome, slug, descricao, precoCentavos, intervalo, moduloChaves } = req.body || {};
+    const { nome, slug, descricao, precoCentavos, precoDependenteCentavos, intervalo, moduloChaves } = req.body || {};
     if (!nome?.trim() || !slug?.trim()) return res.status(400).json({ error: "Informe nome e slug.", code: "missing_fields" });
     const plan = await Plan.create({
       nome: nome.trim(), slug: slug.trim(), descricao: descricao || null,
-      precoCentavos: Number(precoCentavos) || 0, intervalo: intervalo === "year" ? "year" : "month",
+      precoCentavos: Number(precoCentavos) || 0, precoDependenteCentavos: Number(precoDependenteCentavos) || 0,
+      intervalo: intervalo === "year" ? "year" : "month",
     });
     await setPlanModules(plan, moduloChaves);
     const full = await Plan.findByPk(plan.id, { include: [{ model: Module, as: "modules" }] });
@@ -73,10 +75,11 @@ async function updatePlan(req, res, next) {
   try {
     const plan = await Plan.findByPk(req.params.id);
     if (!plan) return res.status(404).json({ error: "Plano não encontrado.", code: "not_found" });
-    const { nome, descricao, precoCentavos, intervalo, ativo, moduloChaves } = req.body || {};
+    const { nome, descricao, precoCentavos, precoDependenteCentavos, intervalo, ativo, moduloChaves } = req.body || {};
     if (nome !== undefined) plan.nome = nome;
     if (descricao !== undefined) plan.descricao = descricao;
     if (precoCentavos !== undefined) plan.precoCentavos = Number(precoCentavos) || 0;
+    if (precoDependenteCentavos !== undefined) plan.precoDependenteCentavos = Number(precoDependenteCentavos) || 0;
     if (intervalo !== undefined) plan.intervalo = intervalo === "year" ? "year" : "month";
     if (ativo !== undefined) plan.ativo = Boolean(ativo);
     await plan.save();

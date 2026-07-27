@@ -3,12 +3,14 @@ import { useState, useRef, useEffect } from "react";
 import { C, CATEGORIES, todayStr, fmt, genId, catById } from "../../lib/constants";
 import { Card, Label, Field, Inp, Sel, Btn, Badge, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, Pencil, Trash2, Save, Check, ShoppingBag, Flag, Siren } from "../../lib/icons.jsx";
+import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
-export default function ParceladosTab({ parcelados, setParcelados, year, monthIdx }) {
-  const EMPTY = { descricao: "", valorTotal: "", totalParcelas: "", parcelaAtual: "1", dataCompra: todayStr(), categoria: "outros" };
+export default function ParceladosTab({ parcelados, setParcelados, year, monthIdx, membros = [] }) {
+  const EMPTY = { descricao: "", valorTotal: "", totalParcelas: "", parcelaAtual: "1", dataCompra: todayStr(), categoria: "outros", membroId: null };
   const [form, setForm] = useState(EMPTY);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [filtroMembro, setFiltroMembro] = useState("todos");
   const formRef = useRef(null);
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -46,9 +48,11 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
   }
   function startEdit(p) { setForm({ ...p, valorTotal: String(p.valorTotal), totalParcelas: String(p.totalParcelas), parcelaAtual: String(p.parcelaAtual) }); setEditId(p.id); setShowForm(true); }
 
-  const ativas = parcelados.filter((p) => { const ini = new Date(p.dataCompra + "T12:00:00"); const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1); return fim >= new Date(year, monthIdx, 1); });
-  const quitadas = parcelados.filter((p) => { const ini = new Date(p.dataCompra + "T12:00:00"); const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1); return fim < new Date(year, monthIdx, 1); });
+  const noMembro = (p) => pertenceAoMembro(p, filtroMembro, membros);
+  const ativas = parcelados.filter((p) => { const ini = new Date(p.dataCompra + "T12:00:00"); const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1); return fim >= new Date(year, monthIdx, 1); }).filter(noMembro);
+  const quitadas = parcelados.filter((p) => { const ini = new Date(p.dataCompra + "T12:00:00"); const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1); return fim < new Date(year, monthIdx, 1); }).filter(noMembro);
   const totalMes = ativas.reduce((s, p) => s + p.valorParcela, 0);
+  const temMembros = membrosOrdenados(membros).length > 1;
 
   return (
     <div>
@@ -90,6 +94,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
               </Sel>
             </Field>
           </div>
+          <MembroSelect membros={membros} value={form.membroId} onChange={(v) => setForm((p) => ({ ...p, membroId: v }))} label="De quem é esta compra?" style={{ marginBottom: 12 }} />
           {valorTotal > 0 && n > 0 && (
             <div style={{ background: "rgba(6,182,212,0.07)", border: `1px solid rgba(6,182,212,0.2)`, borderRadius: 10, padding: "12px", marginBottom: 14 }}>
               <div className="stat-grid">
@@ -110,6 +115,8 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
         </div>
       )}
 
+      <MembroFilter membros={membros} value={filtroMembro} onChange={setFiltroMembro} />
+
       {parcelados.length === 0 && !showForm && <Empty icon="" title="Nenhuma compra parcelada" sub='Clique em "+ Nova compra" para registrar.' />}
 
       {ativas.length > 0 && <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Ativas ({ativas.length})</div>}
@@ -127,7 +134,10 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <div style={{ width: 36, height: 36, borderRadius: 9, background: `color-mix(in srgb, ${cat.color} 10%, transparent)`, color: cat.color, display: "flex", alignItems: "center", justifyContent: "center" }}><CatIcon id={cat.id} size={18} /></div>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{p.descricao}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {p.descricao}
+                    {temMembros && <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: "color-mix(in srgb, var(--accent) 12%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{nomeMembro(p.membroId, membros)}</span>}
+                  </div>
                   <div style={{ fontSize: 11, color: C.muted }}>{cat.label} · Compra: {new Date(p.dataCompra + "T12:00:00").toLocaleDateString("pt-BR")}{p.origem ? ` · ${p.origem}` : ""}</div>
                 </div>
               </div>
@@ -163,7 +173,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
             <div key={p.id} style={{ background: "rgba(16,185,129,0.04)", border: `1px solid rgba(16,185,129,0.12)`, borderRadius: 11, padding: "10px 14px", marginBottom: 7, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: C.subtle }}>{p.descricao}</div>
-                <div style={{ fontSize: 10, color: C.muted }}>{p.totalParcelas}x de {fmt(p.valorParcela)} · {fmt(p.valorTotal)} total</div>
+                <div style={{ fontSize: 10, color: C.muted }}>{p.totalParcelas}x de {fmt(p.valorParcela)} · {fmt(p.valorTotal)} total{temMembros ? ` · ${nomeMembro(p.membroId, membros)}` : ""}</div>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <Badge label="Quitado" color={C.emerald} />

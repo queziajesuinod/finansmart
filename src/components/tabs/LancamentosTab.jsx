@@ -4,9 +4,10 @@ import { C, CATEGORIES, todayStr, genId } from "../../lib/constants";
 import { Card, Label, Field, Inp, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, Plus, Pencil, Check, Save } from "../../lib/icons.jsx";
 import { MerchantIcon } from "../../lib/brandIcons.jsx";
+import { MembroSelect } from "../Membros.jsx";
 
-export default function LancamentosTab({ despesas, setDespesasMk }) {
-  const [form, setForm] = useState({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false });
+export default function LancamentosTab({ despesas, setDespesasMk, membros = [] }) {
+  const [form, setForm] = useState({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false, membroId: null });
   const [editId, setEditId] = useState(null);
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -16,7 +17,7 @@ export default function LancamentosTab({ despesas, setDespesasMk }) {
     const entry = { ...form, valor: val, id: editId || genId() };
     if (editId) { setDespesasMk((p) => p.map((d) => (d.id === editId ? entry : d))); setEditId(null); }
     else setDespesasMk((p) => [...p, entry]);
-    setForm({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false });
+    setForm({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false, membroId: null });
   }
 
   return (
@@ -43,6 +44,7 @@ export default function LancamentosTab({ despesas, setDespesasMk }) {
             ))}
           </div>
         </Field>
+        <MembroSelect membros={membros} value={form.membroId} onChange={(v) => setForm((p) => ({ ...p, membroId: v }))} label="De quem é este gasto?" />
         <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={form.fixo} onChange={(e) => setForm((p) => ({ ...p, fixo: e.target.checked }))} />
           <span style={{ fontSize: 12, color: C.subtle }}>Despesa fixa / recorrente</span>

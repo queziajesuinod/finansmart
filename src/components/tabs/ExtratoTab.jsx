@@ -4,10 +4,12 @@ import { C, todayStr, fmt, catById } from "../../lib/constants";
 import { Card, Field, Inp, Btn, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, CreditCard, Pencil, Trash2, RefreshCw, Save } from "../../lib/icons.jsx";
 import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
+import { MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
-export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, cartoes, monthIdx, year, setTab }) {
+export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, cartoes, monthIdx, year, setTab, membros = [] }) {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false });
+  const [filtroMembro, setFiltroMembro] = useState("todos");
 
   function startEdit(d) { setForm({ descricao: d.descricao, valor: String(d.valor), categoria: d.categoria, data: d.data, fixo: d.fixo || false }); setEditId(d.id); }
   function saveEdit() {
@@ -17,15 +19,30 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
     setEditId(null);
   }
 
-  const cartoesMes = (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`);
-  const totalGeral = totalDespesas;
+  const cartoesMesAll = (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`);
+  const temMembros = membrosOrdenados(membros).length > 1;
 
-  if (!despesas.length && !cartoesMes.length) return <Empty icon="" title="Extrato vazio" sub='Adicione despesas em "Lançamentos" ou importe uma fatura.' />;
+  // Filtro por membro (principal x dependentes) sobre despesas e compras de cartão.
+  const despesasFiltradas = despesas.filter((d) => pertenceAoMembro(d, filtroMembro, membros));
+  const cartoesMes = cartoesMesAll
+    .map((c) => {
+      const compras = (c.compras || []).filter((x) => pertenceAoMembro(x, filtroMembro, membros));
+      return { ...c, comprasFiltradas: compras, totalFiltrado: compras.reduce((s, x) => s + (x.valor || 0), 0) };
+    })
+    .filter((c) => c.comprasFiltradas.length > 0);
+
+  const totalGeral = filtroMembro === "todos"
+    ? totalDespesas
+    : despesasFiltradas.reduce((s, d) => s + d.valor, 0) + cartoesMes.reduce((s, c) => s + c.totalFiltrado, 0);
+
+  if (!despesas.length && !cartoesMesAll.length) return <Empty icon="" title="Extrato vazio" sub='Adicione despesas em "Lançamentos" ou importe uma fatura.' />;
 
   return (
     <div>
+      <MembroFilter membros={membros} value={filtroMembro} onChange={setFiltroMembro} />
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "0 2px" }}>
-        <span style={{ fontSize: 12, color: C.muted }}>{despesas.length} lançamento{despesas.length !== 1 ? "s" : ""}{cartoesMes.length > 0 ? ` · ${cartoesMes.length} cartão${cartoesMes.length > 1 ? "es" : ""}` : ""}</span>
+        <span style={{ fontSize: 12, color: C.muted }}>{despesasFiltradas.length} lançamento{despesasFiltradas.length !== 1 ? "s" : ""}{cartoesMes.length > 0 ? ` · ${cartoesMes.length} cartão${cartoesMes.length > 1 ? "es" : ""}` : ""}</span>
         <span style={{ fontSize: 14, fontWeight: 700, color: C.amber }}>{fmt(totalGeral)}</span>
       </div>
 
@@ -34,9 +51,9 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
           <CardBrandTile banco={cartao.banco} nome={cartao.nome} w={38} h={38} radius={10} iconSize={18} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{cartao.nome}</div>
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Fatura · {cartao.compras.length} compras · toque para ver detalhes</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Fatura · {cartao.comprasFiltradas.length} compras{filtroMembro !== "todos" ? ` de ${nomeMembro(filtroMembro, membros)}` : ""} · toque para ver detalhes</div>
           </div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--danger)", flexShrink: 0 }}>- {fmt(cartao.total)}</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--danger)", flexShrink: 0 }}>- {fmt(filtroMembro === "todos" ? cartao.total : cartao.totalFiltrado)}</div>
         </div>
       ))}
 
@@ -57,14 +74,14 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
         </Card>
       )}
 
-      {[...despesas].sort((a, b) => new Date(b.data) - new Date(a.data)).map((d) => {
+      {[...despesasFiltradas].sort((a, b) => new Date(b.data) - new Date(a.data)).map((d) => {
         const cat = catById(d.categoria);
         return (
           <div key={d.id} style={{ background: C.surface, borderRadius: 13, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, border: `1px solid ${C.border}` }}>
             <MerchantIcon desc={d.descricao} cat={cat.id} size={18} box={38} style={{ borderRadius: 10 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.descricao}</div>
-              <div style={{ fontSize: 10, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>{cat.label} · {new Date(d.data + "T12:00:00").toLocaleDateString("pt-BR")}{d.fixo ? <><span>·</span><RefreshCw size={10} /></> : ""}</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>{cat.label} · {new Date(d.data + "T12:00:00").toLocaleDateString("pt-BR")}{d.fixo ? <><span>·</span><RefreshCw size={10} /></> : ""}{temMembros ? <span style={{ color: C.accent, fontWeight: 700 }}>· {nomeMembro(d.membroId, membros)}</span> : null}</div>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: "var(--danger)", marginBottom: 4 }}>- {fmt(d.valor)}</div>

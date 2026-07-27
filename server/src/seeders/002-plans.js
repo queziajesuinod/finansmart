@@ -3,8 +3,8 @@
 const { randomUUID } = require("crypto");
 
 const PLANS = [
-  { slug: "basico", nome: "Básico", descricao: "Controle essencial: renda, lançamentos, extrato, metas e histórico.", precoCentavos: 1990, intervalo: "month" },
-  { slug: "completo", nome: "Completo", descricao: "Todos os módulos, incluindo cartões, empréstimos, parcelados, importação de PDF e assistente IA.", precoCentavos: 3990, intervalo: "month" },
+  { slug: "basico", nome: "Básico", descricao: "Controle essencial: renda, lançamentos, extrato, metas e histórico.", precoCentavos: 1990, precoDependenteCentavos: 990, intervalo: "month" },
+  { slug: "completo", nome: "Completo", descricao: "Todos os módulos, incluindo cartões, empréstimos, parcelados, importação de PDF e assistente IA.", precoCentavos: 3990, precoDependenteCentavos: 1490, intervalo: "month" },
 ];
 
 module.exports = {

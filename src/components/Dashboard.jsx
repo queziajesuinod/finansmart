@@ -34,6 +34,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const [incomes, setIncomes] = useState({});
   const [allDespesas, setAllDespesas] = useState({});
   // Global state
+  const [membros, setMembros] = useState([]);
   const [emprestimos, setEmprestimos] = useState([]);
   const [goals, setGoals] = useState([]);
   const [parcelados, setParcelados] = useState([]);
@@ -51,6 +52,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
         const s = await api.getState();
         setIncomes(s.incomes);
         setAllDespesas(s.despesas);
+        setMembros(s.membros || []);
         setEmprestimos(s.emprestimos);
         setGoals(s.goals);
         setParcelados(s.parcelados);
@@ -71,6 +73,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     try { await saver(v); setErroSync(""); } catch { setErroSync("Falha ao salvar no servidor. Verifique sua conexão."); }
   }, []);
 
+  const saveMembros = useCallback(persist(setMembros, api.saveMembros), [persist]);
   const saveIncomes = useCallback(persist(setIncomes, api.saveIncomes), [persist]);
   const saveDespesas = useCallback(persist(setAllDespesas, api.saveDespesas), [persist]);
   const saveEmprestimos = useCallback(persist(setEmprestimos, api.saveEmprestimos), [persist]);
@@ -79,6 +82,28 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const saveCartoes = useCallback(persist(setCartoes, api.saveCartoes), [persist]);
   const saveCategoryRules = useCallback(persist(setCategoryRules, api.saveCategoryRules), [persist]);
   const saveCardProfiles = useCallback(persist(setCardProfilesDB, api.saveCardProfiles), [persist]);
+
+  // Salva a lista de membros e, se algum dependente foi REMOVIDO, joga os
+  // lançamentos dele de volta para o principal (membroId = null) em todas as
+  // coleções. O valor da assinatura cai sozinho (é calculado pela contagem).
+  const saveMembrosCascade = useCallback((novaLista) => {
+    const vivos = new Set((novaLista || []).map((m) => m.id));
+    const removidos = new Set((membros || []).filter((m) => !vivos.has(m.id)).map((m) => m.id));
+    if (removidos.size) {
+      const orfao = (mid) => mid && removidos.has(mid);
+      if (Object.values(allDespesas || {}).some((list) => (list || []).some((d) => orfao(d.membroId)))) {
+        const next = {};
+        for (const [k, list] of Object.entries(allDespesas || {})) next[k] = (list || []).map((d) => (orfao(d.membroId) ? { ...d, membroId: null } : d));
+        saveDespesas(next);
+      }
+      if ((emprestimos || []).some((e) => orfao(e.membroId))) saveEmprestimos(emprestimos.map((e) => (orfao(e.membroId) ? { ...e, membroId: null } : e)));
+      if ((parcelados || []).some((p) => orfao(p.membroId))) saveParcelados(parcelados.map((p) => (orfao(p.membroId) ? { ...p, membroId: null } : p)));
+      if ((cartoes || []).some((c) => (c.compras || []).some((x) => orfao(x.membroId)))) {
+        saveCartoes(cartoes.map((c) => ({ ...c, compras: (c.compras || []).map((x) => (orfao(x.membroId) ? { ...x, membroId: null } : x)) })));
+      }
+    }
+    saveMembros(novaLista);
+  }, [membros, allDespesas, emprestimos, parcelados, cartoes, saveDespesas, saveEmprestimos, saveParcelados, saveCartoes, saveMembros]);
 
   const income = incomes[mk] || { renda: "", extra: "" };
   const despesas = allDespesas[mk] || [];
@@ -273,19 +298,19 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
         {erroSync && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: C.red, borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 14 }}>{erroSync}</div>}
 
         {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
-        {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} />}
-        {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} />}
-        {tab === "importar" && tabPermitida("importar") && <ImportarTab setDespesasMk={setDespesasMk} year={year} monthIdx={monthIdx} cartoes={cartoes} setCartoes={saveCartoes} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} cardProfiles={cardProfiles} setTab={setTab} />}
-        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} />}
-        {tab === "emprestimos" && tabPermitida("emprestimos") && <EmprestimosTab emprestimos={emprestimos} setEmprestimos={saveEmprestimos} />}
-        {tab === "parcelados" && tabPermitida("parcelados") && <ParceladosTab parcelados={parcelados} setParcelados={saveParcelados} year={year} monthIdx={monthIdx} />}
+        {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
+        {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
+        {tab === "importar" && tabPermitida("importar") && <ImportarTab setDespesasMk={setDespesasMk} year={year} monthIdx={monthIdx} cartoes={cartoes} setCartoes={saveCartoes} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} cardProfiles={cardProfiles} setTab={setTab} membros={membros} setMembros={saveMembros} temAssistente={tabPermitida("assistente")} access={access} />}
+        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} membros={membros} />}
+        {tab === "emprestimos" && tabPermitida("emprestimos") && <EmprestimosTab emprestimos={emprestimos} setEmprestimos={saveEmprestimos} membros={membros} />}
+        {tab === "parcelados" && tabPermitida("parcelados") && <ParceladosTab parcelados={parcelados} setParcelados={saveParcelados} year={year} monthIdx={monthIdx} membros={membros} />}
         {tab === "metas" && tabPermitida("metas") && <MetasTab goals={goals} setGoals={saveGoals} />}
         {tab === "historico" && tabPermitida("historico") && <HistoricoTab historicoMeses={historicoMeses} />}
         {tab === "assistente" && tabPermitida("assistente") && <AssistenteTab chat={chat} setChat={setChat} totalRenda={totalRenda} totalDespesas={totalDespesas} saldoAtual={saldoAtual} projecao={projecao} statusInfo={statusInfo} porCategoria={porCategoria} goals={goals} emprestimos={emprestimos} parcelados={parcelados} monthIdx={monthIdx} year={year} />}
         {tab === "admin" && access?.admin && <AdminTab />}
       </div>
 
-      {profileOpen && <ProfileModal user={user} onClose={() => setProfileOpen(false)} onUpdated={onUserUpdate} />}
+      {profileOpen && <ProfileModal user={user} onClose={() => setProfileOpen(false)} onUpdated={onUserUpdate} membros={membros} onSaveMembros={saveMembrosCascade} access={access} />}
     </div>
   );
 }

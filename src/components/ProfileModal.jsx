@@ -1,17 +1,28 @@
 // @ts-nocheck
-import { useState } from "react";
-import { C } from "../lib/constants";
-import { Card, Label, Field, Inp, Btn, Divider, STitle, IcoTxt } from "./ui";
-import { X, Save, KeyRound, CircleUser } from "../lib/icons.jsx";
+import { useState, useEffect } from "react";
+import { C, fmt } from "../lib/constants";
+import { Card, Label, Field, Inp, Btn, Divider, STitle, IcoTxt, Badge } from "./ui";
+import { X, Save, KeyRound, CircleUser, Users, WalletCards } from "../lib/icons.jsx";
 import { maskCPF, maskPhone } from "../lib/masks";
-import { updateProfile, changePassword } from "../lib/api";
+import { updateProfile, changePassword, getPlans } from "../lib/api";
+import { MembrosManager } from "./Membros.jsx";
 
-export default function ProfileModal({ user, onClose, onUpdated }) {
+export default function ProfileModal({ user, onClose, onUpdated, membros = [], onSaveMembros, access = null }) {
   const [form, setForm] = useState({ nome: user.nome || "", cpf: user.cpf || "", telefone: user.telefone || "" });
   const [pwd, setPwd] = useState({ senhaAtual: "", novaSenha: "", confirmar: "" });
   const [pMsg, setPMsg] = useState(""); const [pErr, setPErr] = useState("");
   const [sMsg, setSMsg] = useState(""); const [sErr, setSErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Plano atual + valor pago (base + dependentes × valor por dependente).
+  const [plans, setPlans] = useState([]);
+  useEffect(() => { getPlans().then((ps) => setPlans(ps || [])).catch(() => {}); }, []);
+  const planoAtual = (plans.find((p) => p.slug === (access && access.plano && access.plano.slug))) || null;
+  const nDeps = (membros || []).filter((m) => m.tipo === "dependente" && m.ativo !== false).length;
+  const baseCent = planoAtual ? planoAtual.precoCentavos || 0 : 0;
+  const perDepCent = planoAtual ? planoAtual.precoDependenteCentavos || 0 : 0;
+  const totalMes = (baseCent + nDeps * perDepCent) / 100;
+  const subStatus = access && access.subscription ? access.subscription.status : null;
 
   async function salvarPerfil() {
     setPMsg(""); setPErr(""); setBusy(true);
@@ -54,6 +65,32 @@ export default function ProfileModal({ user, onClose, onUpdated }) {
             <button aria-label="Fechar" onClick={onClose} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, width: 30, height: 30, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
           </div>
 
+          {/* Plano atual */}
+          <STitle><IcoTxt Icon={WalletCards}>Seu plano</IcoTxt></STitle>
+          <div style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px", marginBottom: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 15, fontWeight: 800 }}>{planoAtual ? planoAtual.nome : (access && access.plano ? access.plano.nome : "Sem plano ativo")}</span>
+              <span style={{ fontSize: 16, fontWeight: 900, color: C.accent }}>{planoAtual ? `${fmt(totalMes)}/mês` : "—"}</span>
+            </div>
+            {planoAtual && (
+              <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.7 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span>Base do plano</span><span>{fmt(baseCent / 100)}/mês</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{nDeps} dependente{nDeps !== 1 ? "s" : ""}{perDepCent > 0 ? ` × ${fmt(perDepCent / 100)}` : ""}</span>
+                  <span>{fmt((nDeps * perDepCent) / 100)}/mês</span>
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+              {subStatus && <Badge label={subStatus === "active" ? "Assinatura ativa" : subStatus} color={subStatus === "active" ? C.emerald : C.amber} />}
+              {access && access.admin && <Badge label="Admin" color={C.violet} />}
+              {access && access.billingEnabled === false && <span style={{ fontSize: 10, color: C.muted }}>cobrança em modo de testes</span>}
+            </div>
+          </div>
+          <div style={{ fontSize: 10.5, color: C.muted, margin: "8px 2px 0", lineHeight: 1.5 }}>O valor acumula {perDepCent > 0 ? `${fmt(perDepCent / 100)} por dependente vinculado.` : "conforme os dependentes vinculados."} Gerencie os familiares mais abaixo.</div>
+
+          <Divider />
+
           {/* Dados do perfil */}
           <STitle><IcoTxt Icon={CircleUser}>Meus dados</IcoTxt></STitle>
           <div style={{ display: "grid", gap: 12 }}>
@@ -81,6 +118,15 @@ export default function ProfileModal({ user, onClose, onUpdated }) {
           </div>
           <Msg ok={sMsg} err={sErr} />
           <Btn onClick={salvarSenha} disabled={busy} style={{ marginTop: 12 }}><IcoTxt Icon={KeyRound}>Alterar senha</IcoTxt></Btn>
+
+          {onSaveMembros && (
+            <>
+              <Divider />
+              <STitle><IcoTxt Icon={Users}>Familiares / dependentes</IcoTxt></STitle>
+              <p style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>Adicione familiares para gerir as finanças deles na mesma conta. Os extratos e empréstimos ficam separados por pessoa. O valor da assinatura aumenta conforme o número de dependentes. <strong style={{ color: C.subtle }}>Ao remover um dependente, os lançamentos dele voltam para o principal e o valor é reduzido.</strong></p>
+              <MembrosManager membros={membros} onSave={onSaveMembros} saving={busy} access={access} />
+            </>
+          )}
         </Card>
       </div>
     </div>

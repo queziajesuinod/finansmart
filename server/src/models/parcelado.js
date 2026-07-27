@@ -15,6 +15,7 @@ module.exports = (sequelize, DataTypes) => {
       origem: { type: DataTypes.STRING, allowNull: true },
       // Referência opcional ao cartão de onde a compra veio (importação).
       cartaoId: { type: DataTypes.UUID, allowNull: true },
+      membroId: { type: DataTypes.STRING, allowNull: true },
     },
     { tableName: "parcelados", indexes: [{ fields: ["userId"] }] }
   );

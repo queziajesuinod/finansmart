@@ -4,13 +4,15 @@ import { C, fmt, fmtPct, genId } from "../../lib/constants";
 import { calcPMT, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao } from "../../lib/finance";
 import { Card, Label, Field, Inp, Btn, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { Pencil, Trash2, Scale, TrendingDown, ReceiptText, BanknoteArrowDown, Check, Save, CircleCheck, Siren, RefreshCw } from "../../lib/icons.jsx";
+import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
-export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
-  const EMPTY = { instituicao: "", contrato: "", valorContratado: "", taxa: "", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", parcelas: "", pago: "0", pagoAuto: true };
+export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = [] }) {
+  const EMPTY = { instituicao: "", contrato: "", valorContratado: "", taxa: "", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", parcelas: "", pago: "0", pagoAuto: true, membroId: null };
   const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [filtroMembro, setFiltroMembro] = useState("todos");
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   const pv = parseFloat((form.valorContratado || "").replace(",", ".")) || 0;
@@ -40,10 +42,12 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
   function remove(id) { setEmprestimos(emprestimos.filter((e) => e.id !== id)); if (detail?.id === id) setDetail(null); }
   function updatePago(emp, val) { const v = Math.min(emp.parcelas, Math.max(0, parseInt(val) || 0)); setEmprestimos(emprestimos.map((e) => (e.id === emp.id ? { ...e, pago: v, pagoAuto: false } : e))); }
 
-  const empView = emprestimos.map((e) => {
+  const empViewAll = emprestimos.map((e) => {
     const p = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
     return { ...e, pagoEfetivo: Math.min(e.parcelas, Math.max(0, p)) };
   });
+  // Filtro por membro (principal x dependentes).
+  const empView = empViewAll.filter((e) => pertenceAoMembro(e, filtroMembro, membros));
 
   const totalSD = empView.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pagoEfetivo), 0);
   const totalPMT = empView.reduce((s, e) => s + calcPMT(e.valorContratado, e.taxa, e.parcelas), 0);
@@ -64,7 +68,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
     <div>
       {emprestimos.length > 0 && (
         <div className="stat-grid" style={{ marginBottom: 14 }}>
-          {[{ label: "Saldo Devedor Total", value: fmt(totalSD), color: C.rose, Icon: Scale }, { label: "Parcela Mensal Total", value: fmt(totalPMT), color: C.amber, Icon: TrendingDown }, { label: "Contratos ativos", value: emprestimos.length, color: C.cyan, Icon: ReceiptText }].map((c) => (
+          {[{ label: "Saldo Devedor Total", value: fmt(totalSD), color: C.rose, Icon: Scale }, { label: "Parcela Mensal Total", value: fmt(totalPMT), color: C.amber, Icon: TrendingDown }, { label: "Contratos ativos", value: empView.length, color: C.cyan, Icon: ReceiptText }].map((c) => (
             <Card key={c.label} style={{ padding: "12px 13px" }}>
               <div style={{ marginBottom: 6, color: c.color }}><c.Icon size={16} strokeWidth={2} /></div>
               <Label>{c.label}</Label>
@@ -79,6 +83,8 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
         <Btn variant="sm" onClick={() => { setShowForm((p) => !p); setEditId(null); setForm(EMPTY); }}>+ Novo empréstimo</Btn>
       </div>
 
+      <MembroFilter membros={membros} value={filtroMembro} onChange={setFiltroMembro} />
+
       {showForm && (
         <Card style={{ marginBottom: 16 }}>
           <STitle>{editId ? "Editar empréstimo" : "Novo empréstimo"}</STitle>
@@ -92,6 +98,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
             <Field label="Data da 1ª Parcela"><Inp type="date" value={form.dataPrimeira} onChange={f("dataPrimeira")} /></Field>
             <Field label="Data de Quitação (auto)"><Inp type="date" value={form.dataQuitacao} onChange={f("dataQuitacao")} style={{ background: "var(--fill-2)" }} /></Field>
           </div>
+          <MembroSelect membros={membros} value={form.membroId} onChange={(v) => setForm((p) => ({ ...p, membroId: v }))} label="De quem é este empréstimo?" style={{ marginBottom: 12 }} />
           <div style={{ background: "var(--fill-2)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: pagoAuto ? 0 : 10 }}>
               <input type="checkbox" checked={pagoAuto} onChange={(e) => setForm((p) => ({ ...p, pagoAuto: e.target.checked }))} />
@@ -145,7 +152,10 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
           <Card key={emp.id} style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{emp.instituicao}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {emp.instituicao}
+                  {membrosOrdenados(membros).length > 1 && <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: "color-mix(in srgb, var(--accent) 12%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{nomeMembro(emp.membroId, membros)}</span>}
+                </div>
                 {emp.contrato && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Contrato: {emp.contrato}</div>}
                 {emp.dataPrimeira && <div style={{ fontSize: 11, color: C.muted }}>1ª parcela: {new Date(emp.dataPrimeira + "T12:00:00").toLocaleDateString("pt-BR")}</div>}
                 {emp.dataQuitacao && <div style={{ fontSize: 11, color: C.muted }}>Quitação: {new Date(emp.dataQuitacao + "T12:00:00").toLocaleDateString("pt-BR")}</div>}

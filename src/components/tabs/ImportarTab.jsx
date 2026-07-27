@@ -3,10 +3,11 @@ import { useState, useRef, useEffect } from "react";
 import { C, CATEGORIES, todayStr, fmt, genId, tint } from "../../lib/constants";
 import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { parseFatura, aplicarRegras, merchantKey } from "../../lib/parseFatura";
-import { authConfig, aiImportFatura } from "../../lib/api";
-import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight, Sparkles } from "../../lib/icons.jsx";
+import { authConfig, aiImportFatura, getPlans } from "../../lib/api";
+import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight } from "../../lib/icons.jsx";
+import { membrosOrdenados, principalId, principalDe } from "../Membros.jsx";
 
-export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, setCartoes, parcelados, setParcelados, categoryRules, setCategoryRules, cardProfiles, setTab }) {
+export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, setCartoes, parcelados, setParcelados, categoryRules, setCategoryRules, cardProfiles, setTab, membros = [], setMembros, temAssistente = false, access = null }) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [items, setItems] = useState([]);
@@ -16,13 +17,63 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   const [totalFatura, setTotalFatura] = useState(null);
   const [aiOn, setAiOn] = useState(false);
   const [loadingIA, setLoadingIA] = useState(false);
-  const [autoIA, setAutoIA] = useState(() => { try { return localStorage.getItem("jp:autoIA") !== "0"; } catch { return true; } });
   const ref = useRef();
   const mf = (k) => (e) => setMeta((p) => ({ ...p, [k]: e.target.value }));
-  const toggleAutoIA = () => setAutoIA((v) => { const nv = !v; try { localStorage.setItem("jp:autoIA", nv ? "1" : "0"); } catch {} return nv; });
 
   // Descobre se a leitura com IA está habilitada no servidor (chave configurada).
   useEffect(() => { authConfig().then((cfg) => setAiOn(Boolean(cfg && cfg.aiImport))).catch(() => {}); }, []);
+
+  // ── Vínculo portador → membro (familiar) ──────────────────────────────
+  // Cada portador da fatura (ex.: Thiago, Rayane) é ligado a um membro. Valores:
+  //   um membroId existente  |  "novo:<nome>" para criar um dependente novo.
+  // Leitura com IA só é oferecida se o servidor tem chave E o usuário tem o módulo assistente.
+  const iaLiberada = aiOn && temAssistente;
+
+  const [mapMembro, setMapMembro] = useState({});
+  // Separar por familiar é OPCIONAL: por padrão desligado → tudo vai para o
+  // principal (não cria dependente, não gera cobrança adicional).
+  const [separarPorMembro, setSepararPorMembro] = useState(false);
+  const primNome = (s) => String(s || "").trim().split(/\s+/)[0].toLowerCase();
+  const portadoresDetectados = [...new Set(items.map((i) => i.portador || "Titular").filter(Boolean))];
+  const temDependentes = membrosOrdenados(membros).length > 1;
+  const principalNome = (principalDe(membros) || {}).nome || "o principal";
+  // A separação só faz sentido quando há dependentes OU mais de um portador na fatura.
+  const podeSeparar = Boolean(setMembros) && (temDependentes || portadoresDetectados.some((p) => primNome(p) !== "titular"));
+
+  useEffect(() => {
+    const pid = principalId(membros);
+    setMapMembro((prev) => {
+      const next = { ...prev };
+      for (const port of portadoresDetectados) {
+        if (next[port]) continue;
+        // Já existe um membro com esse nome? usa ele (mantém consistência entre importações).
+        const match = (membros || []).find((m) => primNome(m.nome) === primNome(port));
+        // Padrão: NÃO força separar — todo portador desconhecido vai para o PRINCIPAL.
+        // O usuário escolhe caso a caso quem quer separar (criar/usar dependente).
+        next[port] = match ? match.id : (pid || "");
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length, membros]);
+
+  // Quantos portadores o usuário escolheu separar (mapeados p/ alguém que não é o principal).
+  const pidAtual = principalId(membros);
+  const nSeparados = portadoresDetectados.filter((p) => { const v = mapMembro[p]; return v && v !== pidAtual; }).length;
+  // Quantos dependentes NOVOS seriam criados ao salvar (opções "novo:").
+  const novosDeps = separarPorMembro ? portadoresDetectados.filter((p) => { const v = mapMembro[p]; return typeof v === "string" && v.startsWith("novo:"); }).length : 0;
+
+  // Preço da assinatura: base + (nº de dependentes × valor por dependente).
+  const [plans, setPlans] = useState([]);
+  useEffect(() => { getPlans().then((ps) => setPlans(ps || [])).catch(() => {}); }, []);
+  const planoAtual = (plans.find((p) => p.slug === (access && access.plano && access.plano.slug))) || plans.find((p) => p.precoDependenteCentavos > 0) || plans[0] || null;
+  const baseCentavos = planoAtual ? planoAtual.precoCentavos || 0 : 0;
+  const perDepCentavos = planoAtual ? planoAtual.precoDependenteCentavos || 0 : 0;
+  const depsAtuais = (membros || []).filter((m) => m.tipo === "dependente" && m.ativo !== false).length;
+  const precoDe = (nDeps) => (baseCentavos + nDeps * perDepCentavos) / 100;
+
+  // Confirmação de ajuste de preço antes de criar dependente(s).
+  const [confirmarPreco, setConfirmarPreco] = useState(false);
 
   // Mês/ano de referência para a IA (1-12). Prioriza o campo, senão detecta, senão a tela.
   function refParaIA(txt) {
@@ -169,6 +220,8 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     // Aplica as categorias que o usuário já ensinou em importações anteriores.
     const comRegras = aplicarRegras(parsed, categoryRules);
     setItems(comRegras);
+    // Se o usuário já tem dependentes cadastrados, começa com a separação ligada.
+    setSepararPorMembro(membrosOrdenados(membros).length > 1);
     // Detecta o mês de referência da fatura (independe do mês visível na tela).
     const mesRefDet = detectarMesRef(txtCompleto || "", comRegras);
     if (mesRefDet) setMeta((mt) => ({ ...mt, mesRef: mesRefDet }));
@@ -204,7 +257,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     let aviso = "";
     if (!bate) {
       if (dif > 0) {
-        const dicaIA = aiOn ? (fonte === "ia" ? ` Confira/edite a lista antes de salvar.` : ` Para ler as compras que faltaram, toque em "Melhorar leitura com IA".`) : "";
+        const dicaIA = iaLiberada ? (fonte === "ia" ? ` Confira/edite a lista antes de salvar.` : ` Completando automaticamente com IA...`) : ` Revise e edite a lista manualmente.`;
         const prefixo = fonte === "ia" ? "Mesmo com a IA, a" : "A";
         aviso = ` ${prefixo} soma das compras lidas é ${fmt(somaExtraida)}, abaixo do total oficial ${fmt(totalOficial)} (que será usado no app). Diferença de ${fmt(Math.abs(dif))}.${dicaIA}`;
       } else {
@@ -219,7 +272,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
 
     // Reforço automático: se a leitura LOCAL ficou incompleta (faltou valor) e a
     // IA está ligada, completa sozinha — sem precisar clicar no botão.
-    if (fonte === "local" && aiOn && autoIA && totalOficial && dif > 1) {
+    if (fonte === "local" && iaLiberada && totalOficial && dif > 1) {
       lerComIA(txtCompleto, true);
     }
   }
@@ -316,8 +369,40 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     setLoading(false); e.target.value = "";
   }
 
-  function confirm() {
-    const todas = items.map((i) => ({ descricao: i.descricao, valor: parseFloat(i.valor) || 0, data: i.data, categoria: i.categoria, parcelas: i.parcelas, parcelaAtual: i.parcelaAtual, portador: i.portador || "Titular", final: i.final || "", id: genId() }));
+  // Decide se precisa aprovar o ajuste de preço (criação de dependentes) antes de salvar.
+  function handleSalvar() {
+    if (novosDeps > 0) { setConfirmarPreco(true); return; }
+    salvarCartao(false);
+  }
+
+  function salvarCartao(tudoPrincipal = false) {
+    // separar = usuário quer separar E não optou por "tudo no principal" no alerta de preço.
+    const separar = separarPorMembro && !tudoPrincipal;
+    // Resolve o vínculo portador → membro. Sem separar, tudo vai para o principal
+    // (membroId null) e nenhum dependente é criado (nenhum custo adicional).
+    const resolveMap = { ...mapMembro };
+    let membrosAtualizados = null;
+    if (setMembros && separar) {
+      const base = [...(membros || [])];
+      const novos = [];
+      Object.entries(resolveMap).forEach(([port, val]) => {
+        if (typeof val === "string" && val.startsWith("novo:")) {
+          const nome = val.slice(5).trim() || port;
+          const id = genId();
+          novos.push({ id, nome, parentesco: null, tipo: "dependente", ordem: base.length + novos.length, ativo: true });
+          resolveMap[port] = id;
+        }
+      });
+      if (novos.length) { membrosAtualizados = [...base, ...novos]; setMembros(membrosAtualizados); }
+    }
+    const pid = principalId(membrosAtualizados || membros);
+    const membroDoPortador = (port) => {
+      if (!separar) return null; // não separar ⇒ tudo no principal
+      const v = resolveMap[port || "Titular"];
+      return !v || v === pid ? null : v; // principal ⇒ null (default do app)
+    };
+
+    const todas = items.map((i) => ({ descricao: i.descricao, valor: parseFloat(i.valor) || 0, data: i.data, categoria: i.categoria, parcelas: i.parcelas, parcelaAtual: i.parcelaAtual, portador: i.portador || "Titular", final: i.final || "", membroId: membroDoPortador(i.portador || "Titular"), id: genId() }));
 
     // Dedup por DATA + VALOR contra o que já foi importado antes (reimport da mesma fatura).
     const sig = (c) => `${c.data}|${Math.round((c.valor || 0) * 100)}`;
@@ -379,8 +464,9 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
         valorParcela: c.valor,
         dataCompra: `${dataPrimeira.getFullYear()}-${String(dataPrimeira.getMonth() + 1).padStart(2, "0")}-${String(dataPrimeira.getDate()).padStart(2, "0")}`,
         categoria: c.categoria,
-        origem: `${cartao.nome}${c.portador && c.portador !== "Titular" ? " · " + c.portador : ""}`,
+        origem: cartao.nome,
         cartaoId,
+        membroId: c.membroId || null,
       };
       const keys = parcKeys(nova);
       if (keys.some((k) => existentes.has(k))) { ignoradas++; return; } // já preenchido → desconsidera
@@ -406,7 +492,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
       setCategoryRules(novasRegras);
     }
 
-    setItems([]); setTexto(""); setMeta({ banco: "", nome: "", limite: "", vencimento: "", mesRef: "" }); setTotalFatura(null);
+    setItems([]); setTexto(""); setMeta({ banco: "", nome: "", limite: "", vencimento: "", mesRef: "" }); setTotalFatura(null); setMapMembro({}); setSepararPorMembro(false); setConfirmarPreco(false);
     const dupTxt = duplicadas > 0 ? ` ${duplicadas} compra${duplicadas > 1 ? "s" : ""} duplicada${duplicadas > 1 ? "s" : ""} (mesma data e valor) ignorada${duplicadas > 1 ? "s" : ""}.` : "";
     setMsg(`Cartão "${cartao.nome}" importado com ${compras.length} compras (${fmt(total)})!${dupTxt}${msgParc} Veja na aba Cartões de Crédito.`);
     if (setTab) setTab("cartoes");
@@ -469,22 +555,6 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
         )}
 
         {msg && <div style={{ marginTop: 12, padding: "9px 12px", background: "var(--fill)", borderRadius: 9, fontSize: 12, color: C.subtle, lineHeight: 1.6 }}>{msg}</div>}
-
-        {aiOn && texto && !loading && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-            <Btn variant="ghost" onClick={lerComIA} disabled={loadingIA} style={{ width: "100%" }}>
-              <IcoTxt Icon={Sparkles}>{loadingIA ? "Analisando com IA..." : "Melhorar leitura com IA"}</IcoTxt>
-            </Btn>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.subtle, marginTop: 10, cursor: "pointer" }}>
-              <input type="checkbox" checked={autoIA} onChange={toggleAutoIA} style={{ width: 15, height: 15, accentColor: "var(--accent)", cursor: "pointer" }} />
-              Completar automaticamente com IA quando o total não bater
-            </label>
-            <p style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.6, display: "flex", gap: 6, alignItems: "flex-start" }}>
-              <Lightbulb size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>Envia <strong>só o texto</strong> extraído (o PDF não sai do seu aparelho) para uma IA que não guarda seus dados. Faturas grandes são lidas em partes automaticamente.</span>
-            </p>
-          </div>
-        )}
       </Card>
 
       {items.length > 0 && (
@@ -517,9 +587,40 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
             <Field label="Dia de vencimento (todo mês)"><Inp type="number" min={1} max={31} placeholder="Ex: 25" value={diaDoVenc(meta.vencimento)} onChange={setVencDia} /></Field>
           </div>
           {meta.vencimento && <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><Calendar size={12} /> Vence todo dia {new Date(meta.vencimento + "T12:00:00").getDate()} de cada mês.</div>}
-          {(() => { const portadores = [...new Set(items.map((i) => i.portador).filter(Boolean))]; return portadores.length > 1 ? (
-            <div style={{ fontSize: 11, color: C.cyan, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><Users size={12} /> {portadores.length} portadores detectados: {portadores.join(", ")}</div>
-          ) : null; })()}
+          {podeSeparar && (
+            <div style={{ background: "rgba(6,182,212,0.06)", border: `1px solid rgba(6,182,212,0.25)`, borderRadius: 10, padding: "11px 13px", marginBottom: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={separarPorMembro} onChange={(e) => setSepararPorMembro(e.target.checked)} style={{ width: 15, height: 15, accentColor: "var(--accent)", cursor: "pointer" }} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.cyan, display: "inline-flex", alignItems: "center", gap: 6 }}><Users size={13} /> Separar lançamentos por familiar</span>
+              </label>
+              {!separarPorMembro ? (
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+                  Tudo será atribuído a <strong style={{ color: C.subtle }}>{principalNome}</strong> (principal). Nenhum dependente é criado e não há custo adicional. Ligue a opção acima se quiser separar por pessoa.
+                </div>
+              ) : (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, lineHeight: 1.5 }}>Escolha quem quer separar — não precisa separar todos. Quem ficar como <strong style={{ color: C.subtle }}>{principalNome}</strong> (principal) não gera dependente nem custo adicional.</div>
+                  {portadoresDetectados.map((port) => (
+                    <div key={port} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, minWidth: 90, display: "inline-flex", alignItems: "center", gap: 5 }}><User size={12} color={C.violet} /> {port}</span>
+                      <span style={{ color: C.muted }}>→</span>
+                      <Sel value={mapMembro[port] || ""} onChange={(e) => setMapMembro((m) => ({ ...m, [port]: e.target.value }))} style={{ flex: 1, minWidth: 150 }}>
+                        {membrosOrdenados(membros).map((m) => (
+                          <option key={m.id} value={m.id}>{m.nome}{m.tipo === "principal" ? " (principal)" : ""}</option>
+                        ))}
+                        {primNome(port) !== "titular" && <option value={"novo:" + port}>➕ Criar dependente “{port}”</option>}
+                      </Sel>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, fontWeight: 700, color: nSeparados > 0 ? C.accent : C.muted, marginTop: 4 }}>
+                    {nSeparados > 0
+                      ? `${nSeparados} de ${portadoresDetectados.length} portador${portadoresDetectados.length > 1 ? "es" : ""} será(ão) separado(s) · o restante fica com ${principalNome}.`
+                      : `Nenhum separado — tudo será atribuído a ${principalNome}.`}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {parseFloat((meta.limite || "").replace(",", ".")) > 0 && (
             <div style={{ background: "rgba(16,185,129,0.06)", border: `1px solid rgba(16,185,129,0.2)`, borderRadius: 9, padding: "10px 13px", marginBottom: 14, display: "flex", justifyContent: "space-between" }}>
               <span style={{ fontSize: 12, color: C.subtle }}>Limite disponível após esta fatura:</span>
@@ -554,10 +655,51 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
             <span style={{ fontSize: 15, fontWeight: 800, color: C.amber }}>{fmt(totalItens)}</span>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <Btn onClick={confirm} style={{ flex: 1 }}>Salvar cartão com {items.length} compras</Btn>
+            <Btn onClick={handleSalvar} style={{ flex: 1 }}>Salvar cartão com {items.length} compras</Btn>
             <Btn variant="ghost" onClick={() => { setItems([]); setMsg(""); }}>Cancelar</Btn>
           </div>
         </Card>
+      )}
+
+      {confirmarPreco && (
+        <div onClick={() => setConfirmarPreco(false)} style={{ position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, backdropFilter: "blur(4px)" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420 }}>
+            <Card style={{ padding: "22px 22px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 11, background: "color-mix(in srgb, var(--warning) 16%, transparent)", color: C.amber, display: "flex", alignItems: "center", justifyContent: "center" }}><Users size={20} /></div>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>Ajuste na assinatura</div>
+              </div>
+              <p style={{ fontSize: 13, color: C.subtle, lineHeight: 1.6, marginBottom: 14 }}>
+                Você está vinculando <strong>{novosDeps} {novosDeps > 1 ? "novos dependentes" : "novo dependente"}</strong>. Isso altera o valor da sua assinatura.
+              </p>
+
+              {perDepCentavos > 0 ? (
+                <div style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.muted, marginBottom: 6 }}>
+                    <span>Valor atual{planoAtual ? ` (${planoAtual.nome})` : ""}</span>
+                    <span>{fmt(precoDe(depsAtuais))}/mês</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800 }}>
+                    <span style={{ color: C.text }}>Novo valor</span>
+                    <span style={{ color: C.amber }}>{fmt(precoDe(depsAtuais + novosDeps))}/mês</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>+{fmt((novosDeps * perDepCentavos) / 100)}/mês ({novosDeps} × {fmt(perDepCentavos / 100)} por dependente).</div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 16, lineHeight: 1.6 }}>Confirme a criação de {novosDeps} dependente(s) para separar os lançamentos por pessoa.</div>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Btn onClick={() => { setConfirmarPreco(false); salvarCartao(false); }} style={{ width: "100%" }}>
+                  Aprovar e criar {novosDeps > 1 ? "dependentes" : "dependente"}
+                </Btn>
+                <Btn variant="ghost" onClick={() => { setConfirmarPreco(false); salvarCartao(true); }} style={{ width: "100%" }}>
+                  Não criar — lançar tudo no principal
+                </Btn>
+              </div>
+            </Card>
+          </div>
+        </div>
       )}
     </div>
   );
