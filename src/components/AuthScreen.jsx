@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { C } from "../lib/constants";
 import { Card, Label, Inp, Btn, STitle } from "./ui";
 import { LogoTile } from "./Logo.jsx";
+import InstallPWA from "./InstallPWA.jsx";
 import { register, login, authConfig, googleLoginUrl, getPlans } from "../lib/api";
 import { maskCPF, maskPhone } from "../lib/masks";
 import { fmt } from "../lib/constants";
@@ -143,6 +144,8 @@ export default function AuthScreen({ onLogin }) {
             </span>
           </div>
         </Card>
+
+        <InstallPWA />
       </div>
     </div>
   );
