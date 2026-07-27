@@ -58,6 +58,7 @@ async function getState(req, res, next) {
         id: c.id, banco: c.banco, nome: c.nome, limite: num(c.limite), vencimentoDia: c.vencimentoDia,
         vencimento: c.vencimento, mesRef: c.mesRef, total: num(c.total), somaCompras: num(c.somaCompras),
         portadores: c.portadores || [],
+        pagamentos: Array.isArray(c.pagamentos) ? c.pagamentos : [],
         compras: (c.compras || []).map((x) => ({ id: x.id, descricao: x.descricao, valor: num(x.valor), data: x.data, categoria: x.categoria, parcelas: x.parcelas, parcelaAtual: x.parcelaAtual, portador: x.portador, final: x.final, membroId: x.membroId || null })),
       })),
       goals: goals.map((g) => ({ id: g.id, nome: g.nome, alvo: num(g.alvo), atual: num(g.atual), prazo: g.prazo })),
@@ -175,6 +176,9 @@ async function putCartoes(req, res, next) {
           vencimentoDia: c.vencimentoDia ? int(c.vencimentoDia) : null, vencimento: c.vencimento || null,
           mesRef: c.mesRef, total: num(c.total), somaCompras: num(c.somaCompras),
           portadores: Array.isArray(c.portadores) ? c.portadores : [],
+          pagamentos: Array.isArray(c.pagamentos)
+            ? c.pagamentos.map((p) => ({ id: p.id || undefined, data: dateOrNull(p.data), valor: num(p.valor), descricao: p.descricao || "Pagamento" }))
+            : [],
         },
         { transaction: t }
       );

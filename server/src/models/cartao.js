@@ -14,6 +14,9 @@ module.exports = (sequelize, DataTypes) => {
       total: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
       somaCompras: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
       portadores: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+      // Pagamentos/quitações da fatura ({ id, data, valor, descricao }). Não são
+      // gastos: ficam à parte das compras, apenas como histórico de quitação.
+      pagamentos: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     },
     { tableName: "cartoes", indexes: [{ fields: ["userId", "mesRef"] }] }
   );

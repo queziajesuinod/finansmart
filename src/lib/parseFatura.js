@@ -99,6 +99,29 @@ function parseValor(linha) {
   return { valor, index: last.index };
 }
 
+// Extrai os PAGAMENTOS da fatura (quitações do cartão) como lançamentos
+// separados. Pagamento NÃO é gasto — não entra nas compras nem no total do
+// cartão; fica num histórico próprio ("quanto já paguei"). Captura só as linhas
+// granulares "Pagamento em DD ..." (com data e valor), ignorando os totais
+// "Pagamento recebido" / "Pagamentos e Financiamentos" para não contar duas vezes.
+// Valor sempre positivo (é o valor pago).
+export function extrairPagamentos(texto, year) {
+  const linhas = (texto || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const out = [];
+  for (const linha of linhas) {
+    if (!/pagamento\s+em\b/i.test(linha)) continue;
+    const dt = parseData(linha);
+    if (!dt) continue;
+    const vl = parseValor(linha);
+    if (!vl || vl.valor === 0) continue;
+    const ano = dt.ano || year;
+    const dd = String(dt.dia).padStart(2, "0");
+    const mm = String(dt.mes + 1).padStart(2, "0");
+    out.push({ data: `${ano}-${mm}-${dd}`, valor: Math.abs(vl.valor), descricao: "Pagamento" });
+  }
+  return out;
+}
+
 function limparDescricao(desc) {
   return desc
     .replace(/[•·]{2,}\s*\d+/g, " ")              // •••• 4354
@@ -442,5 +465,6 @@ export function parseFatura(texto, year, monthIdx) {
   else { out = flatEstru; oficial = estru.somaSubtotais; }
 
   out.totalOficial = oficial > 0 ? oficial : null;
+  out.pagamentos = extrairPagamentos(texto, year);
   return out;
 }

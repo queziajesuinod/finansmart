@@ -15,6 +15,9 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   const [texto, setTexto] = useState("");
   const [meta, setMeta] = useState({ banco: "", nome: "", limite: "", vencimento: "", mesRef: "" });
   const [totalFatura, setTotalFatura] = useState(null);
+  // Pagamentos da fatura (quitações do cartão). NÃO são gastos — vão para o
+  // histórico próprio do cartão, sem afetar o total de compras.
+  const [pagamentos, setPagamentos] = useState([]);
   const [aiOn, setAiOn] = useState(false);
   const [loadingIA, setLoadingIA] = useState(false);
   const ref = useRef();
@@ -220,6 +223,9 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     // Aplica as categorias que o usuário já ensinou em importações anteriores.
     const comRegras = aplicarRegras(parsed, categoryRules);
     setItems(comRegras);
+    // Pagamentos: só o parser local os detecta (a IA cuida só das compras).
+    // Preserva os já detectados quando a leitura vem da IA (parsed sem a lista).
+    if (Array.isArray(parsed.pagamentos)) setPagamentos(parsed.pagamentos);
     // Se o usuário já tem dependentes cadastrados, começa com a separação ligada.
     setSepararPorMembro(membrosOrdenados(membros).length > 1);
     // Detecta o mês de referência da fatura (independe do mês visível na tela).
@@ -416,6 +422,13 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
       return;
     }
 
+    // Pagamentos (quitações): registrados à parte, sem afetar o total de gastos.
+    // Dedup por DATA + VALOR contra pagamentos já importados (reimport da fatura).
+    const pagsRaw = (pagamentos || []).map((p) => ({ id: genId(), data: p.data, valor: parseFloat(p.valor) || 0, descricao: p.descricao || "Pagamento" }));
+    const jaPagas = new Set();
+    (cartoes || []).forEach((ct) => (ct.pagamentos || []).forEach((x) => jaPagas.add(sig(x))));
+    const pags = pagsRaw.filter((p) => !jaPagas.has(sig(p)));
+
     const somaCompras = compras.reduce((s, c) => s + c.valor, 0);
     // Se houve dedup, o total oficial não vale mais; usa a soma das compras novas.
     const total = duplicadas > 0 ? somaCompras : ((totalFatura && totalFatura >= somaCompras - 0.01) ? totalFatura : somaCompras);
@@ -434,6 +447,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
       vencimento: meta.vencimento || "",
       mesRef,
       total, somaCompras, compras, portadores,
+      pagamentos: pags,
       criadoEm: new Date().toISOString(),
     };
     setCartoes([...(cartoes || []), cartao]);
@@ -492,9 +506,11 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
       setCategoryRules(novasRegras);
     }
 
-    setItems([]); setTexto(""); setMeta({ banco: "", nome: "", limite: "", vencimento: "", mesRef: "" }); setTotalFatura(null); setMapMembro({}); setSepararPorMembro(false); setConfirmarPreco(false);
+    setItems([]); setTexto(""); setMeta({ banco: "", nome: "", limite: "", vencimento: "", mesRef: "" }); setTotalFatura(null); setPagamentos([]); setMapMembro({}); setSepararPorMembro(false); setConfirmarPreco(false);
     const dupTxt = duplicadas > 0 ? ` ${duplicadas} compra${duplicadas > 1 ? "s" : ""} duplicada${duplicadas > 1 ? "s" : ""} (mesma data e valor) ignorada${duplicadas > 1 ? "s" : ""}.` : "";
-    setMsg(`Cartão "${cartao.nome}" importado com ${compras.length} compras (${fmt(total)})!${dupTxt}${msgParc} Veja na aba Cartões de Crédito.`);
+    const somaPags = pags.reduce((s, p) => s + p.valor, 0);
+    const pagTxt = pags.length ? ` ${pags.length} pagamento${pags.length > 1 ? "s" : ""} registrado${pags.length > 1 ? "s" : ""} (${fmt(somaPags)}) no histórico do cartão — não conta como gasto.` : "";
+    setMsg(`Cartão "${cartao.nome}" importado com ${compras.length} compras (${fmt(total)})!${dupTxt}${pagTxt}${msgParc} Veja na aba Cartões de Crédito.`);
     if (setTab) setTab("cartoes");
   }
 
@@ -565,6 +581,9 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
           </div>
           {usaTotalOficial && (
             <div style={{ fontSize: 11, color: C.emerald, marginBottom: 12, lineHeight: 1.5 }}>Valor total oficial da fatura (a soma das compras detalhadas é {fmt(somaItens)}; a diferença de {fmt(totalItens - somaItens)} corresponde a compras que o leitor não detalhou, mas o total do cartão está correto).</div>
+          )}
+          {pagamentos.length > 0 && (
+            <div style={{ fontSize: 11, color: C.emerald, marginBottom: 12, lineHeight: 1.5 }}>{pagamentos.length} pagamento{pagamentos.length > 1 ? "s" : ""} da fatura detectado{pagamentos.length > 1 ? "s" : ""} ({fmt(pagamentos.reduce((s, p) => s + (parseFloat(p.valor) || 0), 0))}). Vão para o histórico do cartão como quitações — <strong style={{ color: C.subtle }}>não</strong> entram no total de gastos.</div>
           )}
           {cardProfiles && cardProfiles.length > 0 && (
             <Field label="Preencher com um cartão já usado" style={{ marginBottom: 10 }}>

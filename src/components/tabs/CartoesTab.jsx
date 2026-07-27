@@ -83,6 +83,9 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
         const filtroNome = filtro === "todos" ? "Total" : ((grupos.find((g) => g.id === filtro) || {}).nome || filtro);
         const porCat = CATEGORIES.map((c) => ({ ...c, total: comprasFiltradas.filter((x) => x.categoria === c.id).reduce((s, x) => s + x.valor, 0), qtd: comprasFiltradas.filter((x) => x.categoria === c.id).length })).filter((c) => Math.abs(c.total) > 0.001).sort((a, b) => b.total - a.total);
         const porPortador = grupos.map((g) => ({ id: g.id, nome: g.nome, total: cartao.compras.filter((c) => grupoIdDe(c) === g.id).reduce((s, c) => s + c.valor, 0), qtd: cartao.compras.filter((c) => grupoIdDe(c) === g.id).length })).sort((a, b) => b.total - a.total);
+        // Pagamentos (quitações) — histórico à parte, não contam como gasto.
+        const pagamentos = cartao.pagamentos || [];
+        const totalPago = pagamentos.reduce((s, p) => s + (Number(p.valor) || 0), 0);
         return (
           <Card key={cartao.id} style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
@@ -162,7 +165,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                 )}
 
                 <div style={{ display: "flex", gap: 6, background: "var(--fill-2)", borderRadius: 9, padding: 4, marginBottom: 12 }}>
-                  {[{ id: "compras", label: "Compras", Icon: ShoppingCart }, { id: "categorias", label: "Por categoria", Icon: ChartColumn }].map((t) => (
+                  {[{ id: "compras", label: "Compras", Icon: ShoppingCart }, { id: "categorias", label: "Por categoria", Icon: ChartColumn }, ...(pagamentos.length ? [{ id: "pagamentos", label: "Pagamentos", Icon: Wallet }] : [])].map((t) => (
                     <button key={t.id} onClick={() => setAba((p) => ({ ...p, [cartao.id]: t.id }))} style={{ flex: 1, padding: "8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: tabAtual === t.id ? tint(C.accent, 90) : "transparent", color: tabAtual === t.id ? "#fff" : C.muted }}><t.Icon size={14} /> {t.label}</button>
                   ))}
                 </div>
@@ -209,6 +212,26 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
                       <span style={{ fontSize: 13, fontWeight: 700 }}>Total{filtro !== "todos" ? ` (${filtroNome.split(" ")[0]})` : " da fatura"}</span>
                       <span style={{ fontSize: 14, fontWeight: 800, color: C.amber }}>{fmt(totalFiltrado)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {tabAtual === "pagamentos" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, lineHeight: 1.5 }}>Quitações desta fatura. Não são gastos — mostram quanto você já pagou do cartão.</div>
+                    {[...pagamentos].sort((a, b) => new Date(b.data) - new Date(a.data)).map((pg) => (
+                      <div key={pg.id || `${pg.data}-${pg.valor}`} style={{ background: "var(--fill-2)", borderRadius: 10, padding: "10px 13px", marginBottom: 7, display: "flex", alignItems: "center", gap: 11, border: `1px solid ${C.border}` }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 9, background: `color-mix(in srgb, ${C.emerald} 10%, transparent)`, color: C.emerald, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Wallet size={16} /></div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{pg.descricao || "Pagamento"}</div>
+                          <div style={{ fontSize: 10, color: C.muted }}>{pg.data ? new Date(pg.data + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</div>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: C.emerald, flexShrink: 0 }}>− {fmt(Number(pg.valor) || 0)}</div>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                      <span style={{ fontSize: 12, color: C.muted }}>{pagamentos.length} pagamento{pagamentos.length > 1 ? "s" : ""}</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: C.emerald }}>{fmt(totalPago)}</span>
                     </div>
                   </div>
                 )}
