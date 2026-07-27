@@ -3,10 +3,11 @@ import { C, MONTH_NAMES, fmt, fmtPct } from "../../lib/constants";
 import { Card, Label, Badge, Bar, Empty, STitle, Divider, MoneyInput } from "../ui";
 import { CatIcon, Wallet, TrendingDown, PiggyBank, Scale, ReceiptText, CreditCard, Landmark, ShoppingBag, RefreshCw, Undo2, CircleCheck, TriangleAlert, Siren } from "../../lib/icons.jsx";
 import AssinaturasPanel from "../AssinaturasPanel.jsx";
+import RendaMembros from "../RendaMembros.jsx";
 
 const STATUS_ICON = { superavit: CircleCheck, equilibrado: TriangleAlert, deficit: Siren };
 
-export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, totalEmprestimos, parcelVencendoMes, despesas, monthIdx, year, assinaturas, assinMinMeses, onAssinMinMeses }) {
+export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, rendaManualNum = 0, rendaHoleritesNum = 0, extraManualNum = 0, rendaExtrasMembrosNum = 0, membros = [], holerites = [], setHolerites, rendasExtras = [], setRendasExtras, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, totalEmprestimos, parcelVencendoMes, despesas, monthIdx, year, assinaturas, assinMinMeses, onAssinMinMeses }) {
   const salarioLabel = salarioVig && salarioVig.mes != null ? `${MONTH_NAMES[salarioVig.mes].slice(0, 3)}/${salarioVig.ano}` : "";
   return (
     <div>
@@ -48,7 +49,16 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
             </div>
           </div>
         )}
+        {(rendaHoleritesNum > 0 || rendaExtrasMembrosNum > 0) && (
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 12, lineHeight: 1.5 }}>
+            Renda fixa total <strong style={{ color: C.emerald }}>{fmt(rendaNum)}</strong>
+            {rendaHoleritesNum > 0 ? <> — inclui {fmt(rendaHoleritesNum)} de holerites{rendaManualNum > 0 ? ` + ${fmt(rendaManualNum)} do campo acima` : ""}.</> : "."}
+            {rendaExtrasMembrosNum > 0 ? <> Renda extra inclui {fmt(rendaExtrasMembrosNum)} por pessoa.</> : null}
+          </div>
+        )}
       </Card>
+
+      <RendaMembros membros={membros} holerites={holerites} setHolerites={setHolerites} rendasExtras={rendasExtras} setRendasExtras={setRendasExtras} year={year} monthIdx={monthIdx} />
 
       {/* Previsão */}
       {statusInfo && (

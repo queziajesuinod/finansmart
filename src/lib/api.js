@@ -89,6 +89,8 @@ export async function getState() {
     categoryRules: s.categoryRules || {},
     cardProfiles: s.cardProfiles || [],
     membros: s.membros || [],
+    holerites: s.holerites || [],
+    rendasExtras: s.rendasExtras || [],
   };
 }
 
@@ -125,6 +127,8 @@ export function saveGoals(arr) { return request("PUT", "/api/goals", arr || []);
 export function saveCategoryRules(map) { return request("PUT", "/api/category-rules", map || {}); }
 export function saveCardProfiles(arr) { return request("PUT", "/api/card-profiles", arr || []); }
 export function saveMembros(arr) { return request("PUT", "/api/membros", arr || []); }
+export function saveHolerites(arr) { return request("PUT", "/api/holerites", arr || []); }
+export function saveRendasExtras(arr) { return request("PUT", "/api/rendas-extras", arr || []); }
 
 // ─── Leitura de fatura com IA (reforço) ──────────────────────
 // Envia o texto já extraído do PDF (o PDF não sai do dispositivo) e recebe as

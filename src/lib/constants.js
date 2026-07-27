@@ -92,3 +92,49 @@ export function rendaSalarioEfetiva(incomes, year, monthIdx) {
   if (propria !== undefined && propria !== null && String(propria).trim() !== "") return String(propria);
   return salarioVigente(incomes, year, monthIdx).valor;
 }
+
+// ─── Holerites (renda fixa estruturada) ──────────────────────
+// mesRef é "YYYY-MM" (MM 01-12). Índice comparável = ano*12 + (mês-1).
+export function mesRefDe(year, monthIdx) {
+  return `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+}
+function idxDeMesRef(mesRef) {
+  const [y, m] = String(mesRef || "").split("-").map(Number);
+  if (!y || !m) return null;
+  return y * 12 + (m - 1);
+}
+
+// Líquido de um holerite = salário bruto − soma dos descontos.
+export function liquidoHolerite(h) {
+  const bruto = Number(h && h.salarioBruto) || 0;
+  const desc = ((h && h.descontos) || []).reduce((s, d) => s + (Number(d && d.valor) || 0), 0);
+  return bruto - desc;
+}
+export function totalOutrosRendimentos(h) {
+  return ((h && h.outrosRendimentos) || []).reduce((s, r) => s + (Number(r && r.valor) || 0), 0);
+}
+
+// Holerites vigentes num mês: recorrentes valem do seu mesRef em diante (o mais
+// recente por membro+título "vence"); não-recorrentes valem só no próprio mês.
+export function holeritesVigentes(holerites, year, monthIdx) {
+  const alvo = year * 12 + monthIdx;
+  const lista = Array.isArray(holerites) ? holerites : [];
+  const recorrentes = {}; // chave membroId|titulo → holerite mais recente ≤ alvo
+  const pontuais = [];
+  for (const h of lista) {
+    const idx = idxDeMesRef(h.mesRef);
+    if (idx == null) continue;
+    if (h.recorrente === false) { if (idx === alvo) pontuais.push(h); continue; }
+    if (idx > alvo) continue; // ainda não começou
+    const chave = `${h.membroId || ""}|${String(h.titulo || "").toLowerCase().trim()}`;
+    const atual = recorrentes[chave];
+    if (!atual || idx > idxDeMesRef(atual.mesRef)) recorrentes[chave] = h;
+  }
+  return [...Object.values(recorrentes), ...pontuais];
+}
+
+// Rendas extras de um mês exato (não são recorrentes).
+export function rendasExtrasDoMes(rendasExtras, year, monthIdx) {
+  const mr = mesRefDe(year, monthIdx);
+  return (Array.isArray(rendasExtras) ? rendasExtras : []).filter((r) => r.mesRef === mr);
+}

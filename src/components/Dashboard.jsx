@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint } from "../lib/constants";
+import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, liquidoHolerite, rendasExtrasDoMes } from "../lib/constants";
 import { calcPMT, calcSaldoDevedor, calcParcelasPagas } from "../lib/finance";
 import * as api from "../lib/api";
 import DashboardTab from "./tabs/DashboardTab.jsx";
@@ -41,6 +41,8 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const [cartoes, setCartoes] = useState([]);
   const [categoryRules, setCategoryRules] = useState({});
   const [cardProfilesDB, setCardProfilesDB] = useState([]);
+  const [holerites, setHolerites] = useState([]);
+  const [rendasExtras, setRendasExtras] = useState([]);
   const [chat, setChat] = useState([{ role: "assistant", content: "Olá! Sou seu assistente financeiro. Posso analisar seus gastos, calcular dívidas, comparar meses e dar dicas práticas. Como posso te ajudar?" }]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [erroSync, setErroSync] = useState("");
@@ -59,6 +61,8 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
         setCartoes(s.cartoes);
         setCategoryRules(s.categoryRules || {});
         setCardProfilesDB(s.cardProfiles || []);
+        setHolerites(s.holerites || []);
+        setRendasExtras(s.rendasExtras || []);
       } catch (e) {
         setErroSync("Não foi possível carregar seus dados do servidor.");
       } finally {
@@ -82,6 +86,8 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const saveCartoes = useCallback(persist(setCartoes, api.saveCartoes), [persist]);
   const saveCategoryRules = useCallback(persist(setCategoryRules, api.saveCategoryRules), [persist]);
   const saveCardProfiles = useCallback(persist(setCardProfilesDB, api.saveCardProfiles), [persist]);
+  const saveHolerites = useCallback(persist(setHolerites, api.saveHolerites), [persist]);
+  const saveRendasExtras = useCallback(persist(setRendasExtras, api.saveRendasExtras), [persist]);
 
   // Salva a lista de membros e, se algum dependente foi REMOVIDO, joga os
   // lançamentos dele de volta para o principal (membroId = null) em todas as
@@ -101,9 +107,11 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
       if ((cartoes || []).some((c) => (c.compras || []).some((x) => orfao(x.membroId)))) {
         saveCartoes(cartoes.map((c) => ({ ...c, compras: (c.compras || []).map((x) => (orfao(x.membroId) ? { ...x, membroId: null } : x)) })));
       }
+      if ((holerites || []).some((h) => orfao(h.membroId))) saveHolerites(holerites.map((h) => (orfao(h.membroId) ? { ...h, membroId: null } : h)));
+      if ((rendasExtras || []).some((r) => orfao(r.membroId))) saveRendasExtras(rendasExtras.map((r) => (orfao(r.membroId) ? { ...r, membroId: null } : r)));
     }
     saveMembros(novaLista);
-  }, [membros, allDespesas, emprestimos, parcelados, cartoes, saveDespesas, saveEmprestimos, saveParcelados, saveCartoes, saveMembros]);
+  }, [membros, allDespesas, emprestimos, parcelados, cartoes, holerites, rendasExtras, saveDespesas, saveEmprestimos, saveParcelados, saveCartoes, saveHolerites, saveRendasExtras, saveMembros]);
 
   const income = incomes[mk] || { renda: "", extra: "" };
   const despesas = allDespesas[mk] || [];
@@ -116,8 +124,19 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const rendaHerdada = !rendaExplicita && salarioVig.valor !== "";
   const rendaStr = rendaExplicita ? income.renda : (rendaHerdada ? salarioVig.valor : "");
 
-  const rendaNum = parseFloat((rendaStr || "").replace(",", ".")) || 0;
-  const extraNum = parseFloat((income.extra || "").replace(",", ".")) || 0;
+  const rendaManualNum = parseFloat((rendaStr || "").replace(",", ".")) || 0;
+  const extraManualNum = parseFloat((income.extra || "").replace(",", ".")) || 0;
+
+  // Renda fixa estruturada: soma dos líquidos dos holerites vigentes no mês.
+  const holeritesDoMes = useMemo(() => holeritesVigentes(holerites, year, monthIdx), [holerites, year, monthIdx]);
+  const rendaHoleritesNum = useMemo(() => holeritesDoMes.reduce((s, h) => s + liquidoHolerite(h), 0), [holeritesDoMes]);
+  // Rendas extras estruturadas (por membro) do mês.
+  const extrasDoMes = useMemo(() => rendasExtrasDoMes(rendasExtras, year, monthIdx), [rendasExtras, year, monthIdx]);
+  const rendaExtrasMembrosNum = useMemo(() => extrasDoMes.reduce((s, r) => s + (Number(r.valor) || 0), 0), [extrasDoMes]);
+
+  // Totais (o campo manual continua valendo como complemento/fallback).
+  const rendaNum = rendaManualNum + rendaHoleritesNum; // renda fixa total
+  const extraNum = extraManualNum + rendaExtrasMembrosNum; // renda extra total
   const totalRenda = rendaNum + extraNum;
   const despesasLancadas = useMemo(() => despesas.reduce((s, d) => s + d.valor, 0), [despesas]);
 
@@ -297,7 +316,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "18px 12px 48px" }}>
         {erroSync && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: C.red, borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 14 }}>{erroSync}</div>}
 
-        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
+        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
         {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
         {tab === "importar" && tabPermitida("importar") && <ImportarTab setDespesasMk={setDespesasMk} year={year} monthIdx={monthIdx} cartoes={cartoes} setCartoes={saveCartoes} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} cardProfiles={cardProfiles} setTab={setTab} membros={membros} setMembros={saveMembros} temAssistente={tabPermitida("assistente")} access={access} />}

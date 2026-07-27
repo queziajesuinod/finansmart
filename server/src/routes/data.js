@@ -22,5 +22,7 @@ router.put("/goals", c.putGoals);
 router.put("/category-rules", c.putCategoryRules);
 router.put("/card-profiles", c.putCardProfiles);
 router.put("/membros", c.putMembros);
+router.put("/holerites", c.putHolerites);
+router.put("/rendas-extras", c.putRendasExtras);
 
 module.exports = router;

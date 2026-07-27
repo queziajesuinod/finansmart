@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro } = require("../models");
+const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro, Holerite, RendaExtra } = require("../models");
 
 // Garante que o usuário tenha um membro "principal" (criado a partir do nome
 // do próprio usuário). Chamado no getState para compatibilizar contas antigas.
@@ -27,7 +27,7 @@ async function getState(req, res, next) {
   try {
     const userId = req.user.id;
     await ensurePrincipal(userId, req.user.nome);
-    const [incomes, despesas, emprestimos, parcelados, cartoes, goals, rules, profiles, membros] = await Promise.all([
+    const [incomes, despesas, emprestimos, parcelados, cartoes, goals, rules, profiles, membros, holerites, rendasExtras] = await Promise.all([
       Income.findAll({ where: { userId } }),
       Despesa.findAll({ where: { userId } }),
       Emprestimo.findAll({ where: { userId } }),
@@ -37,9 +37,13 @@ async function getState(req, res, next) {
       CategoryRule.findAll({ where: { userId } }),
       CardProfile.findAll({ where: { userId }, order: [["nome", "ASC"]] }),
       Membro.findAll({ where: { userId }, order: [["ordem", "ASC"], ["nome", "ASC"]] }),
+      Holerite.findAll({ where: { userId } }),
+      RendaExtra.findAll({ where: { userId } }),
     ]);
 
     res.json({
+      holerites: holerites.map((h) => ({ id: h.id, membroId: h.membroId || null, mesRef: h.mesRef, titulo: h.titulo || "", salarioBruto: num(h.salarioBruto), descontos: Array.isArray(h.descontos) ? h.descontos : [], outrosRendimentos: Array.isArray(h.outrosRendimentos) ? h.outrosRendimentos : [], recorrente: h.recorrente !== false })),
+      rendasExtras: rendasExtras.map((r) => ({ id: r.id, membroId: r.membroId || null, mesRef: r.mesRef, descricao: r.descricao || "", valor: num(r.valor) })),
       membros: membros.map((m) => ({ id: m.id, nome: m.nome, tipo: m.tipo, parentesco: m.parentesco, cor: m.cor, ordem: m.ordem, ativo: m.ativo })),
       incomes: incomes.map((i) => ({ ano: i.ano, mes: i.mes, renda: num(i.renda), extra: num(i.extra) })),
       despesas: despesas.map((d) => ({ id: d.id, descricao: d.descricao, valor: num(d.valor), categoria: d.categoria, data: d.data, fixo: d.fixo, ano: d.ano, mes: d.mes, membroId: d.membroId || null })),
@@ -114,6 +118,19 @@ const putParcelados = replaceAll(Parcelado, (p) => ({
   parcelaAtual: int(p.parcelaAtual), valorParcela: num(p.valorParcela), dataCompra: dateOrNull(p.dataCompra),
   categoria: p.categoria || "outros", origem: p.origem || null, cartaoId: null,
   membroId: membroIdOrNull(p.membroId),
+}));
+
+const arr = (v) => (Array.isArray(v) ? v : []);
+const linhasValor = (lista) => arr(lista).map((x) => ({ nome: (x && x.nome) || "", valor: num(x && x.valor) })).filter((x) => x.nome || x.valor);
+
+const putHolerites = replaceAll(Holerite, (h) => ({
+  membroId: membroIdOrNull(h.membroId), mesRef: String(h.mesRef || ""), titulo: h.titulo || null,
+  salarioBruto: num(h.salarioBruto), descontos: linhasValor(h.descontos), outrosRendimentos: linhasValor(h.outrosRendimentos),
+  recorrente: h.recorrente !== false,
+}));
+
+const putRendasExtras = replaceAll(RendaExtra, (r) => ({
+  membroId: membroIdOrNull(r.membroId), mesRef: String(r.mesRef || ""), descricao: r.descricao || null, valor: num(r.valor),
 }));
 
 // Membros (familiares). Diferente do replaceAll genérico: PRESERVA o id vindo do
@@ -216,4 +233,4 @@ async function putCategoryRules(req, res, next) {
   }
 }
 
-module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putCartoes, putCategoryRules, putCardProfiles, putMembros };
+module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras };
