@@ -46,7 +46,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
 
       {!semFaturas && (
       <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+      <div className="stat-grid" style={{ marginBottom: 16 }}>
         {[
           { l: "Total em faturas", v: fmt(totalFaturas), c: C.amber, Icon: ReceiptText },
           { l: "Limite total", v: fmt(totalLimite), c: C.indigo, Icon: CreditCard },
@@ -85,8 +85,8 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                <button aria-label="Editar cartão" onClick={() => (editId === cartao.id ? setEditId(null) : abrirEdicao(cartao))} style={{ padding: "6px 9px", background: tint(C.accent, 12), border: `1px solid ${tint(C.accent, 24)}`, borderRadius: 7, color: C.accent, cursor: "pointer", display: "inline-flex" }}><Pencil size={13} /></button>
-                <button aria-label="Remover cartão" onClick={() => remover(cartao.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 7, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={13} /></button>
+                <button className="mini-act" aria-label="Editar cartão" onClick={() => (editId === cartao.id ? setEditId(null) : abrirEdicao(cartao))} style={{ padding: "6px 9px", background: tint(C.accent, 12), border: `1px solid ${tint(C.accent, 24)}`, borderRadius: 8, color: C.accent, cursor: "pointer" }}><Pencil size={14} /></button>
+                <button className="mini-act" aria-label="Remover cartão" onClick={() => remover(cartao.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
               </div>
             </div>
 
@@ -96,7 +96,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                   <Label>Editar informações do cartão</Label>
                   <button aria-label="Fechar edição" onClick={() => setEditId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", display: "inline-flex" }}><X size={15} /></button>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div className="form-grid-2">
                   <Field label="Nome / apelido"><Inp value={editForm.nome} onChange={(e) => setEditForm((f) => ({ ...f, nome: e.target.value }))} /></Field>
                   <Field label="Banco / bandeira"><Inp value={editForm.banco} onChange={(e) => setEditForm((f) => ({ ...f, banco: e.target.value }))} /></Field>
                   <Field label="Limite total (R$)"><MoneyInput placeholder="0,00" value={editForm.limite} onChange={(e) => setEditForm((f) => ({ ...f, limite: e.target.value }))} /></Field>
@@ -109,7 +109,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
+            <div className="stat-grid" style={{ marginBottom: 12 }}>
               {[{ l: "Valor da fatura", v: fmt(usado), c: C.amber }, { l: "Limite total", v: limite > 0 ? fmt(limite) : "—", c: C.subtle }, { l: "Disponível", v: limite > 0 ? fmt(disp) : "—", c: C.emerald }].map((x) => (
                 <div key={x.l} style={{ background: "var(--fill-2)", borderRadius: 8, padding: "9px 11px" }}>
                   <Label>{x.l}</Label>
@@ -244,26 +244,26 @@ function MeusCartoes({ cardProfiles, setCardProfiles }) {
 
       {list.map((p) => (
         <div key={p.id} style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 90px 60px 70px auto", gap: 8, alignItems: "end" }}>
+          <div className="card-profile-grid">
             <Field label="Apelido"><Inp value={p.nome} onChange={(e) => upd(p.id, "nome", e.target.value)} /></Field>
             <Field label="Banco"><Inp value={p.banco || ""} onChange={(e) => upd(p.id, "banco", e.target.value)} /></Field>
             <Field label="Limite"><MoneyInput value={p.limite ?? ""} onChange={(e) => upd(p.id, "limite", e.target.value)} /></Field>
             <Field label="Venc."><Inp type="number" placeholder="dia" value={p.vencimentoDia ?? ""} onChange={(e) => upd(p.id, "vencimentoDia", e.target.value)} /></Field>
             <Field label="4 finais"><Inp value={p.finais || ""} maxLength={4} onChange={(e) => upd(p.id, "finais", e.target.value.replace(/\D/g, ""))} /></Field>
-            <button aria-label="Remover cartão" onClick={() => rm(p.id)} style={{ padding: "9px 10px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={14} /></button>
+            <button className="cp-btn" aria-label="Remover cartão" onClick={() => rm(p.id)} style={{ padding: "9px 10px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>
           </div>
         </div>
       ))}
 
       <div style={{ borderTop: `1px dashed ${C.border}`, marginTop: 6, paddingTop: 12 }}>
         <Label>Adicionar cartão</Label>
-        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 90px 60px 70px auto", gap: 8, alignItems: "end", marginTop: 6 }}>
+        <div className="card-profile-grid" style={{ marginTop: 6 }}>
           <Field label="Apelido"><Inp placeholder="Ex: Nubank Roxinho" value={novo.nome} onChange={nf("nome")} /></Field>
           <Field label="Banco"><Inp placeholder="Ex: Nubank" value={novo.banco} onChange={nf("banco")} /></Field>
           <Field label="Limite"><MoneyInput placeholder="0,00" value={novo.limite} onChange={nf("limite")} /></Field>
           <Field label="Venc."><Inp type="number" placeholder="dia" value={novo.vencimentoDia} onChange={nf("vencimentoDia")} /></Field>
           <Field label="4 finais"><Inp placeholder="0000" maxLength={4} value={novo.finais} onChange={(e) => setNovo((p) => ({ ...p, finais: e.target.value.replace(/\D/g, "") }))} /></Field>
-          <Btn variant="sm" onClick={add}>+ Add</Btn>
+          <Btn className="cp-btn" variant="sm" onClick={add}>+ Add</Btn>
         </div>
       </div>
 

@@ -13,7 +13,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       {/* Renda */}
       <Card style={{ marginBottom: 14 }}>
         <STitle>Renda de {MONTH_NAMES[monthIdx]} de {year}</STitle>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="income-grid">
           {/* Salário / Renda fixa — herda o mês anterior automaticamente */}
           <div>
             <Label>Salário / Renda fixa</Label>
@@ -52,8 +52,8 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
 
       {/* Previsão */}
       {statusInfo && (
-        <div style={{ background: statusInfo.bg, border: `1px solid color-mix(in srgb, ${statusInfo.color} 16%, transparent)`, borderRadius: 16, padding: "16px 18px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
+        <div style={{ background: statusInfo.bg, border: `1px solid color-mix(in srgb, ${statusInfo.color} 16%, transparent)`, borderRadius: 16, padding: "16px 18px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Previsão fim de {MONTH_NAMES[monthIdx]}</div>
             <div style={{ fontSize: 28, fontWeight: 900, color: projecao >= 0 ? C.text : C.red, letterSpacing: "-1px" }}>{fmt(projecao)}</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{statusInfo.desc}</div>
@@ -66,7 +66,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       )}
 
       {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginBottom: 14 }}>
+      <div className="grid-min0" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginBottom: 14 }}>
         {[
           { label: "Renda Total", value: fmt(totalRenda), color: C.emerald, Icon: Wallet, sub: extraNum > 0 ? `Fixo ${fmt(rendaNum)}` : undefined },
           { label: "Total Gasto", value: fmt(totalDespesas), color: C.amber, Icon: TrendingDown, sub: `${fmtPct(pctGasto)} da renda` },

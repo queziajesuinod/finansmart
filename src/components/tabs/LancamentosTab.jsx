@@ -29,7 +29,7 @@ export default function LancamentosTab({ despesas, setDespesasMk }) {
             <Inp placeholder="Ex: Mercado, Netflix, Aluguel..." value={form.descricao} onChange={f("descricao")} style={{ flex: 1 }} />
           </div>
         </Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="form-grid-2">
           <Field label="Valor (R$)"><MoneyInput placeholder="0,00" value={form.valor} onChange={f("valor")} /></Field>
           <Field label="Data"><Inp type="date" value={form.data} onChange={f("data")} /></Field>
         </div>

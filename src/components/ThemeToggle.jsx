@@ -10,9 +10,9 @@ export default function ThemeToggle() {
     <button
       aria-label={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
       onClick={() => setThemeState(toggleTheme())}
-      style={{ background: "none", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 8, width: 28, height: 28, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+      style={{ background: "none", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 10, width: 40, height: 40, flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
     >
-      {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+      {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
     </button>
   );
 }

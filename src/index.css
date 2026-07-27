@@ -160,6 +160,132 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 .money-field input { min-width: 0; }
 
+/* ═══════════════════════════════════════════════════════════════
+   Mobile-first — sem scroll horizontal, alvos de toque e grids que
+   empilham em telas pequenas. Breakpoints: 480 / 560 (phone → tablet).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Rede de segurança: nada deve gerar rolagem horizontal no mobile.
+   clip (e não hidden) evita quebrar o position:sticky do cabeçalho. */
+html, body { max-width: 100%; overflow-x: clip; }
+
+/* Alvo de toque confortável para os ícones do cabeçalho. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--subtle);
+  cursor: pointer;
+}
+.icon-btn:not(:disabled):hover { background: var(--fill-2); }
+
+/* Cabeçalho responsivo: no mobile o seletor de mês desce para uma
+   linha própria (centralizada) e as ações ficam à direita do logo. */
+.app-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px 10px;
+  flex-wrap: wrap;
+  min-height: 58px;
+  padding: 8px 14px;
+  box-sizing: border-box;
+}
+.app-brand { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
+.app-actions { display: flex; align-items: center; gap: 8px; }
+.app-month { display: flex; align-items: center; gap: 6px; }
+
+@media (min-width: 561px) {
+  .app-month { order: 2; margin-left: auto; }
+  .app-actions { order: 3; }
+}
+@media (max-width: 560px) {
+  .app-brand { order: 1; }
+  .app-actions { order: 2; margin-left: auto; }
+  .app-month { order: 3; flex-basis: 100%; justify-content: center; }
+}
+
+/* Grade de renda: 2 colunas no desktop, empilha no telefone.
+   min-width:0 impede que um valor longo (fonte grande) estoure a coluna. */
+.income-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.income-grid > * { min-width: 0; }
+@media (max-width: 480px) { .income-grid { grid-template-columns: 1fr; } }
+
+/* Qualquer grade cujo conteúdo (números/valores) possa exceder a coluna. */
+.grid-min0 > * { min-width: 0; }
+
+/* Formulário de 2 colunas que empilha no telefone (evita inputs apertados). */
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid-2 > * { min-width: 0; }
+@media (max-width: 480px) { .form-grid-2 { grid-template-columns: 1fr; } }
+
+/* Cartões de valores/indicadores: refluem sozinhos conforme a largura
+   (2 col no telefone, 3 no tablet) — nunca estouram a tela. */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.stat-grid > * { min-width: 0; }
+
+/* Ações compactas em listas (editar/excluir): área de toque confortável. */
+.mini-act { min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Cadastro de cartões (Apelido/Banco/Limite/Venc./4 finais + ação):
+   uma linha no desktop; no telefone vira 2 colunas e os botões ocupam
+   uma linha inteira (não são mais cortados fora da tela). */
+.card-profile-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 90px 60px 70px auto;
+  gap: 8px;
+  align-items: end;
+}
+@media (max-width: 560px) {
+  .card-profile-grid { grid-template-columns: 1fr 1fr; }
+  .card-profile-grid .cp-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
+}
+
+/* Painel de notificações: no telefone ocupa quase toda a largura, logo abaixo
+   do cabeçalho, para ficar totalmente legível (em vez de colado no canto). */
+@media (max-width: 560px) {
+  .notif-panel {
+    position: fixed !important;
+    top: 62px !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: 72vh !important;
+  }
+}
+
+/* Navegação por abas: no desktop as pills quebram em linhas; no mobile viram
+   uma faixa de rolagem horizontal (1 linha) para não empurrar o conteúdo. */
+.tab-strip {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .tab-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;                 /* Firefox */
+    -ms-overflow-style: none;              /* IE/Edge antigo */
+  }
+  .tab-strip::-webkit-scrollbar { display: none; }  /* WebKit */
+  .tab-strip > button { flex-shrink: 0; scroll-snap-align: start; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

@@ -63,7 +63,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
   return (
     <div>
       {emprestimos.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <div className="stat-grid" style={{ marginBottom: 14 }}>
           {[{ label: "Saldo Devedor Total", value: fmt(totalSD), color: C.rose, Icon: Scale }, { label: "Parcela Mensal Total", value: fmt(totalPMT), color: C.amber, Icon: TrendingDown }, { label: "Contratos ativos", value: emprestimos.length, color: C.cyan, Icon: ReceiptText }].map((c) => (
             <Card key={c.label} style={{ padding: "12px 13px" }}>
               <div style={{ marginBottom: 6, color: c.color }}><c.Icon size={16} strokeWidth={2} /></div>
@@ -82,7 +82,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
       {showForm && (
         <Card style={{ marginBottom: 16 }}>
           <STitle>{editId ? "Editar empréstimo" : "Novo empréstimo"}</STitle>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div className="form-grid-2" style={{ marginBottom: 12 }}>
             <Field label="Instituição Financeira" span={1}><Inp placeholder="Ex: Caixa, Nubank..." value={form.instituicao} onChange={f("instituicao")} /></Field>
             <Field label="Número do Contrato"><Inp placeholder="Opcional" value={form.contrato} onChange={f("contrato")} /></Field>
             <Field label="Valor Contratado (R$)"><MoneyInput placeholder="0,00" value={form.valorContratado} onChange={f("valorContratado")} /></Field>
@@ -152,11 +152,11 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos }) {
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => setDetail(isDetail ? null : emp)} style={{ padding: "4px 9px", background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.2)", borderRadius: 7, color: C.cyan, fontSize: 10, cursor: "pointer" }}>{isDetail ? "Fechar" : "Tabela"}</button>
-                <button aria-label="Editar" onClick={() => startEdit(emp)} style={{ padding: "6px 9px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 7, color: C.indigo, cursor: "pointer", display: "inline-flex" }}><Pencil size={13} /></button>
-                <button aria-label="Excluir" onClick={() => remove(emp.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 7, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={13} /></button>
+                <button className="mini-act" aria-label="Editar" onClick={() => startEdit(emp)} style={{ padding: "6px 9px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 8, color: C.indigo, cursor: "pointer" }}><Pencil size={14} /></button>
+                <button className="mini-act" aria-label="Excluir" onClick={() => remove(emp.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
+            <div className="stat-grid" style={{ marginBottom: 12 }}>
               {[{ l: "Valor Contratado", v: fmt(emp.valorContratado), c: C.text }, { l: "Parcela (Price)", v: fmt(pmt2), c: C.indigo }, { l: "Saldo Devedor", v: fmt(sd), c: C.rose }, { l: "Taxa Mensal", v: `${emp.taxa}%`, c: C.amber }, { l: "Pagas / Total", v: `${pagoEf} / ${emp.parcelas}`, c: C.subtle }, { l: "Restantes", v: rest, c: rest === 0 ? C.emerald : C.cyan }].map((x) => (
                 <div key={x.l} style={{ background: "var(--fill-2)", borderRadius: 8, padding: "9px 11px" }}>
                   <Label>{x.l}</Label>

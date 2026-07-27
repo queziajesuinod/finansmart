@@ -120,7 +120,7 @@ function PlansPanel({ plans, modules, reload, flash, fail }) {
     <div>
       <Card style={{ marginBottom: 14 }}>
         <STitle><IcoTxt Icon={Plus}>Novo plano</IcoTxt></STitle>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div className="form-grid-2" style={{ marginBottom: 10 }}>
           <Field label="Nome"><Inp placeholder="ex: Premium" value={form.nome} onChange={f("nome")} /></Field>
           <Field label="Slug"><Inp placeholder="ex: premium" value={form.slug} onChange={f("slug")} /></Field>
           <Field label="Preço (R$)"><MoneyInput placeholder="0,00" value={form.preco} onChange={f("preco")} /></Field>

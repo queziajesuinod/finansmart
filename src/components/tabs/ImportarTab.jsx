@@ -510,7 +510,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
             </Field>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>É em qual mês a fatura entra no app — detectado pela data de vencimento do PDF. <strong style={{ color: C.subtle }}>Independe do mês que você está vendo na tela.</strong> Ajuste se precisar.</div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
+          <div className="form-grid-2" style={{ marginBottom: 8 }}>
             <Field label="Banco / Bandeira"><Inp placeholder="Ex: CAIXA, Nubank..." value={meta.banco} onChange={mf("banco")} /></Field>
             <Field label="Nome do cartão (apelido)"><Inp placeholder="Ex: Visa Infinite" value={meta.nome} onChange={mf("nome")} /></Field>
             <Field label="Limite total (R$)"><MoneyInput placeholder="Ex: 12.200,00" value={meta.limite} onChange={mf("limite")} /></Field>

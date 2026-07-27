@@ -78,7 +78,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
         <div ref={formRef} style={{ scrollMarginTop: 12 }}>
         <Card style={{ marginBottom: 16 }}>
           <STitle>{editId ? "Editar" : "Nova compra parcelada"}</STitle>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div className="form-grid-2" style={{ marginBottom: 12 }}>
             <Field label="Descrição" span={2}><Inp placeholder="Ex: TV Samsung, Curso..." value={form.descricao} onChange={f("descricao")} /></Field>
             <Field label="Valor Total (R$)"><MoneyInput placeholder="0,00" value={form.valorTotal} onChange={f("valorTotal")} /></Field>
             <Field label="Total de Parcelas"><Inp type="number" placeholder="Ex: 12" value={form.totalParcelas} onChange={f("totalParcelas")} /></Field>
@@ -92,7 +92,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
           </div>
           {valorTotal > 0 && n > 0 && (
             <div style={{ background: "rgba(6,182,212,0.07)", border: `1px solid rgba(6,182,212,0.2)`, borderRadius: 10, padding: "12px", marginBottom: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div className="stat-grid">
                 {[{ l: "Parcela Mensal", v: fmt(valorParcela), c: C.cyan }, { l: "Total da Compra", v: fmt(valorTotal), c: C.text }, { l: "Parcelas Restantes", v: Math.max(0, n - pAtual + 1), c: C.amber }].map((x) => (
                   <div key={x.l} style={{ background: "var(--fill-2)", borderRadius: 8, padding: "9px" }}>
                     <Label>{x.l}</Label>
@@ -132,8 +132,8 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
                 </div>
               </div>
               <div style={{ display: "flex", gap: 5 }}>
-                <button aria-label="Editar" onClick={() => startEdit(p)} style={{ padding: "6px 8px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 6, color: C.indigo, cursor: "pointer", display: "inline-flex" }}><Pencil size={13} /></button>
-                <button aria-label="Excluir" onClick={() => setParcelados(parcelados.filter((x) => x.id !== p.id))} style={{ padding: "6px 8px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 6, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={13} /></button>
+                <button className="mini-act" aria-label="Editar" onClick={() => startEdit(p)} style={{ padding: "6px 8px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 8, color: C.indigo, cursor: "pointer" }}><Pencil size={14} /></button>
+                <button className="mini-act" aria-label="Excluir" onClick={() => setParcelados(parcelados.filter((x) => x.id !== p.id))} style={{ padding: "6px 8px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={13} /></button>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 10 }}>
@@ -167,7 +167,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <Badge label="Quitado" color={C.emerald} />
-                <button aria-label="Excluir" onClick={() => setParcelados(parcelados.filter((x) => x.id !== p.id))} style={{ padding: "5px 7px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={12} /></button>
+                <button className="mini-act" aria-label="Excluir" onClick={() => setParcelados(parcelados.filter((x) => x.id !== p.id))} style={{ padding: "5px 7px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={13} /></button>
               </div>
             </div>
           ))}

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint } from "../lib/constants";
 import { calcPMT, calcSaldoDevedor, calcParcelasPagas } from "../lib/finance";
 import * as api from "../lib/api";
@@ -223,35 +223,44 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
 
   const tabPermitida = (id) => modulos.includes(id);
 
+  // Mantém a aba ativa visível na faixa rolável (mobile).
+  const tabStripRef = useRef(null);
+  useEffect(() => {
+    const el = tabStripRef.current?.querySelector('[data-active="true"]');
+    el?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [tab]);
+
   if (!dataLoaded) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "sans-serif" }}>Carregando seus dados...</div>;
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Segoe UI',sans-serif", color: C.text }}>
       <div style={{ background: "var(--fill-2)", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, padding: "0 14px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="app-topbar" style={{ maxWidth: 900, margin: "0 auto" }}>
+          <div className="app-brand">
             <LogoTile size={34} />
-            <div>
+            <div style={{ minWidth: 0 }}>
               <Wordmark size={15} />
-              <div style={{ fontSize: 10, color: C.muted }}>Olá, {user.nome.split(" ")[0]}!</div>
+              <div style={{ fontSize: 10, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Olá, {user.nome.split(" ")[0]}!</div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="app-month">
+            <button className="icon-btn" aria-label="Mês anterior" onClick={() => { const d = new Date(year, monthIdx - 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }} style={{ fontSize: 18 }}>‹</button>
+            <div style={{ fontSize: 13, fontWeight: 700, minWidth: 92, textAlign: "center" }}>{MONTH_NAMES[monthIdx].slice(0, 3)} {year}</div>
+            <button className="icon-btn" aria-label="Próximo mês" onClick={() => { const d = new Date(year, monthIdx + 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }} style={{ fontSize: 18 }}>›</button>
+          </div>
+          <div className="app-actions">
             <NotificationBell notificacoes={notificacoes} onNavigate={setTab} />
-            <button aria-label="Meu perfil" onClick={() => setProfileOpen(true)} style={{ background: "none", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 8, width: 28, height: 28, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><CircleUser size={16} /></button>
+            <button className="icon-btn" aria-label="Meu perfil" onClick={() => setProfileOpen(true)}><CircleUser size={16} /></button>
             <ThemeToggle />
-            <button aria-label="Mês anterior" onClick={() => { const d = new Date(year, monthIdx - 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 8, width: 28, height: 28, cursor: "pointer" }}>‹</button>
-            <div style={{ fontSize: 12, fontWeight: 700, minWidth: 100, textAlign: "center" }}>{MONTH_NAMES[monthIdx].slice(0, 3)} {year}</div>
-            <button aria-label="Próximo mês" onClick={() => { const d = new Date(year, monthIdx + 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 8, width: 28, height: 28, cursor: "pointer" }}>›</button>
-            <button onClick={onLogout} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 11 }}>Sair</button>
+            <button onClick={onLogout} aria-label="Sair" style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 10, height: 40, padding: "0 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, flexShrink: 0 }}>Sair</button>
           </div>
         </div>
         <div style={{ borderTop: `1px solid ${C.border}` }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxWidth: 900, margin: "0 auto", padding: "8px 12px" }}>
+          <div ref={tabStripRef} className="tab-strip" style={{ maxWidth: 900, margin: "0 auto" }}>
             {TABS.map((t) => {
               const on = tab === t.id;
               return (
-                <button key={t.id} onClick={() => setTab(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: on ? 700 : 600, whiteSpace: "nowrap", transition: "all .15s", border: `1px solid ${on ? tint(C.accent, 35) : C.border}`, background: on ? tint(C.accent, 14) : "transparent", color: on ? C.accent : C.muted }}>
+                <button key={t.id} data-active={on} onClick={() => setTab(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 999, cursor: "pointer", fontSize: 12.5, fontWeight: on ? 700 : 600, whiteSpace: "nowrap", transition: "all .15s", border: `1px solid ${on ? tint(C.accent, 35) : C.border}`, background: on ? tint(C.accent, 14) : "transparent", color: on ? C.accent : C.muted }}>
                   <TabIcon id={t.id} size={14} /> {t.label}
                 </button>
               );

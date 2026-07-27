@@ -17,7 +17,7 @@ export default function MetasTab({ goals, setGoals }) {
     <div>
       <Card style={{ marginBottom: 16 }}>
         <STitle><IcoTxt Icon={Trophy}>Nova meta</IcoTxt></STitle>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="form-grid-2">
           <Field label="Nome" span={2}><Inp placeholder="Ex: Reserva de emergência, Viagem..." value={form.nome} onChange={f("nome")} /></Field>
           <Field label="Valor alvo (R$)"><MoneyInput placeholder="0,00" value={form.alvo} onChange={f("alvo")} /></Field>
           <Field label="Já guardado (R$)"><MoneyInput placeholder="0,00" value={form.atual} onChange={f("atual")} /></Field>

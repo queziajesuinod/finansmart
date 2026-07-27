@@ -45,7 +45,7 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
           <STitle>Editar lançamento</STitle>
           <div style={{ display: "grid", gap: 10 }}>
             <Field label="Descrição"><Inp value={form.descricao} onChange={(e) => setForm((p) => ({ ...p, descricao: e.target.value }))} /></Field>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div className="form-grid-2">
               <Field label="Valor"><MoneyInput value={form.valor} onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} /></Field>
               <Field label="Data"><Inp type="date" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
             </div>
@@ -69,8 +69,8 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: "var(--danger)", marginBottom: 4 }}>- {fmt(d.valor)}</div>
               <div style={{ display: "flex", gap: 4 }}>
-                <button aria-label="Editar" onClick={() => startEdit(d)} style={{ padding: "5px 8px", background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 6, color: "var(--accent)", cursor: "pointer", display: "inline-flex" }}><Pencil size={13} /></button>
-                <button aria-label="Excluir" onClick={() => setDespesasMk((p) => p.filter((x) => x.id !== d.id))} style={{ padding: "5px 8px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 6, color: C.red, cursor: "pointer", display: "inline-flex" }}><Trash2 size={13} /></button>
+                <button className="mini-act" aria-label="Editar" onClick={() => startEdit(d)} style={{ padding: "5px 8px", background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 8, color: "var(--accent)", cursor: "pointer" }}><Pencil size={14} /></button>
+                <button className="mini-act" aria-label="Excluir" onClick={() => setDespesasMk((p) => p.filter((x) => x.id !== d.id))} style={{ padding: "5px 8px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
               </div>
             </div>
           </div>

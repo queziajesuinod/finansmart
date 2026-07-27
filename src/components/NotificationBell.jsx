@@ -36,7 +36,7 @@ export default function NotificationBell({ notificacoes = [], onNavigate }) {
   return (
     <div ref={boxRef} style={{ position: "relative" }}>
       <button aria-label="Notificações" onClick={() => setOpen((v) => !v)}
-        style={{ position: "relative", background: "none", border: `1px solid ${C.border}`, color: count ? C.accent : C.subtle, borderRadius: 8, width: 28, height: 28, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+        style={{ position: "relative", background: "none", border: `1px solid ${C.border}`, color: count ? C.accent : C.subtle, borderRadius: 10, width: 40, height: 40, flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         <Bell size={16} />
         {count > 0 && (
           <span style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 999, background: C.red, color: "#fff", fontSize: 9, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
@@ -46,7 +46,7 @@ export default function NotificationBell({ notificacoes = [], onNavigate }) {
       </button>
 
       {open && (
-        <div style={{ position: "absolute", right: 0, top: 36, width: 320, maxWidth: "86vw", maxHeight: 420, overflowY: "auto", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, boxShadow: "var(--shadow-lg, 0 12px 40px rgba(0,0,0,0.25))", zIndex: 200 }}>
+        <div className="notif-panel" style={{ position: "absolute", right: 0, top: 48, width: 320, maxWidth: "86vw", maxHeight: 420, overflowY: "auto", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, boxShadow: "var(--shadow-lg, 0 12px 40px rgba(0,0,0,0.25))", zIndex: 200 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, background: C.surface }}>
             <span style={{ fontSize: 13, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 7 }}><Bell size={14} /> Notificações</span>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
