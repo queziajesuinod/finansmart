@@ -48,7 +48,8 @@ async function getState(req, res, next) {
       incomes: incomes.map((i) => ({ ano: i.ano, mes: i.mes, renda: num(i.renda), extra: num(i.extra) })),
       despesas: despesas.map((d) => ({ id: d.id, descricao: d.descricao, valor: num(d.valor), categoria: d.categoria, data: d.data, fixo: d.fixo, ano: d.ano, mes: d.mes, membroId: d.membroId || null })),
       emprestimos: emprestimos.map((e) => ({
-        id: e.id, instituicao: e.instituicao, contrato: e.contrato, valorContratado: num(e.valorContratado),
+        id: e.id, instituicao: e.instituicao, contrato: e.contrato, sistema: e.sistema === "SAC" ? "SAC" : "PRICE",
+        valorContratado: num(e.valorContratado),
         taxa: num(e.taxa), parcelas: e.parcelas, pago: e.pago, pagoAuto: e.pagoAuto,
         dataContratacao: e.dataContratacao, dataPrimeira: e.dataPrimeira, dataQuitacao: e.dataQuitacao,
         membroId: e.membroId || null,
@@ -107,7 +108,8 @@ const putDespesas = replaceAll(Despesa, (d) => ({
 }));
 
 const putEmprestimos = replaceAll(Emprestimo, (e) => ({
-  instituicao: e.instituicao, contrato: e.contrato || null, valorContratado: num(e.valorContratado),
+  instituicao: e.instituicao, contrato: e.contrato || null, sistema: e.sistema === "SAC" ? "SAC" : "PRICE",
+  valorContratado: num(e.valorContratado),
   taxa: num(e.taxa), parcelas: int(e.parcelas), pago: int(e.pago), pagoAuto: bool(e.pagoAuto),
   dataContratacao: dateOrNull(e.dataContratacao), dataPrimeira: dateOrNull(e.dataPrimeira), dataQuitacao: dateOrNull(e.dataQuitacao),
   membroId: membroIdOrNull(e.membroId),

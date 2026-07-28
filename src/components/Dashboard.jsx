@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, liquidoHolerite, rendasExtrasDoMes } from "../lib/constants";
-import { calcPMT, calcSaldoDevedor, calcParcelasPagas } from "../lib/finance";
+import { calcParcela, calcSaldoDevedor, calcParcelasPagas } from "../lib/finance";
 import * as api from "../lib/api";
 import DashboardTab from "./tabs/DashboardTab.jsx";
 import LancamentosTab from "./tabs/LancamentosTab.jsx";
@@ -147,7 +147,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
 
   const parcelasMensais = useMemo(() => emprestimos.reduce((s, e) => {
     const pago = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
-    return s + (pago < e.parcelas ? calcPMT(e.valorContratado, e.taxa, e.parcelas) : 0);
+    return s + (pago < e.parcelas ? calcParcela(e.sistema, e.valorContratado, e.taxa, e.parcelas, pago + 1) : 0);
   }, 0), [emprestimos]);
 
   // Parcelas do mês vindas da aba Parcelados. IMPORTANTE: se a parcela já está
@@ -186,7 +186,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const saldoAtual = totalRenda - totalDespesas;
   const totalEmprestimos = useMemo(() => emprestimos.reduce((s, e) => {
     const pago = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
-    return s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, pago);
+    return s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, pago, e.sistema);
   }, 0), [emprestimos]);
 
   const parcelVencendoMes = useMemo(() => parcelados.filter((p) => {

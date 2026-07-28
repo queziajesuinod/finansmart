@@ -1,4 +1,4 @@
-// Empréstimo (Tabela Price).
+// Empréstimo (sistema de amortização Price ou SAC).
 module.exports = (sequelize, DataTypes) => {
   const Emprestimo = sequelize.define(
     "Emprestimo",
@@ -7,6 +7,7 @@ module.exports = (sequelize, DataTypes) => {
       userId: { type: DataTypes.UUID, allowNull: false },
       instituicao: { type: DataTypes.STRING, allowNull: false },
       contrato: { type: DataTypes.STRING, allowNull: true },
+      sistema: { type: DataTypes.STRING(8), allowNull: false, defaultValue: "PRICE" }, // PRICE | SAC
       valorContratado: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
       taxa: { type: DataTypes.DECIMAL(8, 4), allowNull: false, defaultValue: 0 }, // % mensal
       parcelas: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },

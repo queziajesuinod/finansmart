@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState, useRef } from "react";
 import { C, MONTH_NAMES, fmt, tint } from "../../lib/constants";
-import { calcPMT, calcSaldoDevedor } from "../../lib/finance";
+import { calcParcela, calcSaldoDevedor } from "../../lib/finance";
 import { askAssistant } from "../../lib/api";
 import { LogoMark } from "../Logo.jsx";
 
@@ -12,8 +12,8 @@ export default function AssistenteTab({ chat, setChat, totalRenda, totalDespesas
 
   // Monta o resumo financeiro do mês para a IA (ela responde só com base nisso).
   function montarContexto() {
-    const totalSD = emprestimos.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pago), 0);
-    const totalPMT = emprestimos.reduce((s, e) => s + calcPMT(e.valorContratado, e.taxa, e.parcelas), 0);
+    const totalSD = emprestimos.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pago, e.sistema), 0);
+    const totalPMT = emprestimos.reduce((s, e) => s + calcParcela(e.sistema, e.valorContratado, e.taxa, e.parcelas, (e.pago || 0) + 1), 0);
     return [
       `Mês de referência: ${MONTH_NAMES[monthIdx]}/${year}`,
       `Renda total: ${fmt(totalRenda)}`,

@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { C, fmt, fmtPct, genId } from "../../lib/constants";
-import { calcPMT, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao } from "../../lib/finance";
+import { SISTEMAS, normSistema, calcPMT, calcParcela, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao, buildSchedule, resumoEmprestimo } from "../../lib/finance";
 import { Card, Label, Field, Inp, Btn, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { Pencil, Trash2, Scale, TrendingDown, ReceiptText, BanknoteArrowDown, Check, Save, CircleCheck, Siren, RefreshCw } from "../../lib/icons.jsx";
 import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
 export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = [] }) {
-  const EMPTY = { instituicao: "", contrato: "", valorContratado: "", taxa: "", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", parcelas: "", pago: "0", pagoAuto: true, membroId: null };
+  const EMPTY = { instituicao: "", contrato: "", sistema: "PRICE", valorContratado: "", taxa: "", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", parcelas: "", pago: "0", pagoAuto: true, membroId: null };
   const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -18,11 +18,14 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
   const pv = parseFloat((form.valorContratado || "").replace(",", ".")) || 0;
   const taxa = parseFloat((form.taxa || "").replace(",", ".")) || 0;
   const n = parseInt(form.parcelas) || 0;
+  const sistema = normSistema(form.sistema);
+  const isSAC = sistema === "SAC";
   const pagoAuto = form.pagoAuto !== false;
   const pagoCalc = pagoAuto ? calcParcelasPagas(form.dataPrimeira, n) : (parseInt(form.pago) || 0);
   const pago = Math.min(n, Math.max(0, pagoCalc));
-  const pmt = calcPMT(pv, taxa, n);
-  const saldo = calcSaldoDevedor(pv, taxa, n, pago);
+  const resumo = resumoEmprestimo(sistema, pv, taxa, n);
+  const parcelaAtual = calcParcela(sistema, pv, taxa, n, pago + 1); // valor da próxima parcela a vencer
+  const saldo = calcSaldoDevedor(pv, taxa, n, pago, sistema);
   const restantes = Math.max(0, n - pago);
 
   useEffect(() => {
@@ -33,12 +36,12 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
 
   function submit() {
     if (!form.instituicao || !pv || !n) return;
-    const entry = { ...form, valorContratado: pv, taxa, parcelas: n, pago, pagoAuto, dataPrimeira: form.dataPrimeira, id: editId || genId() };
+    const entry = { ...form, sistema, valorContratado: pv, taxa, parcelas: n, pago, pagoAuto, dataPrimeira: form.dataPrimeira, id: editId || genId() };
     if (editId) setEmprestimos(emprestimos.map((e) => (e.id === editId ? entry : e)));
     else setEmprestimos([...emprestimos, entry]);
     setForm(EMPTY); setEditId(null); setShowForm(false);
   }
-  function startEdit(e) { setForm({ ...EMPTY, ...e, valorContratado: String(e.valorContratado), taxa: String(e.taxa), parcelas: String(e.parcelas), pago: String(e.pago), pagoAuto: e.pagoAuto !== false }); setEditId(e.id); setShowForm(true); }
+  function startEdit(e) { setForm({ ...EMPTY, ...e, sistema: normSistema(e.sistema), valorContratado: String(e.valorContratado), taxa: String(e.taxa), parcelas: String(e.parcelas), pago: String(e.pago), pagoAuto: e.pagoAuto !== false }); setEditId(e.id); setShowForm(true); }
   function remove(id) { setEmprestimos(emprestimos.filter((e) => e.id !== id)); if (detail?.id === id) setDetail(null); }
   function updatePago(emp, val) { const v = Math.min(emp.parcelas, Math.max(0, parseInt(val) || 0)); setEmprestimos(emprestimos.map((e) => (e.id === emp.id ? { ...e, pago: v, pagoAuto: false } : e))); }
 
@@ -49,19 +52,13 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
   // Filtro por membro (principal x dependentes).
   const empView = empViewAll.filter((e) => pertenceAoMembro(e, filtroMembro, membros));
 
-  const totalSD = empView.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pagoEfetivo), 0);
-  const totalPMT = empView.reduce((s, e) => s + calcPMT(e.valorContratado, e.taxa, e.parcelas), 0);
+  const totalSD = empView.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pagoEfetivo, e.sistema), 0);
+  // Parcela mensal total = a próxima parcela a vencer de cada contrato (no SAC ela varia).
+  const totalPMT = empView.reduce((s, e) => s + calcParcela(e.sistema, e.valorContratado, e.taxa, e.parcelas, e.pagoEfetivo + 1), 0);
 
   function getSchedule(emp, pagoEf) {
-    const rows = []; const i = emp.taxa / 100; const pmt2 = calcPMT(emp.valorContratado, emp.taxa, emp.parcelas);
-    let saldo2 = emp.valorContratado;
-    for (let k = 1; k <= emp.parcelas; k++) {
-      const juros = i === 0 ? 0 : saldo2 * i;
-      const amort = pmt2 - juros;
-      saldo2 = Math.max(0, saldo2 - amort);
-      rows.push({ k, pmt: pmt2, juros, amort, saldo: saldo2, pago: k <= pagoEf });
-    }
-    return rows;
+    return buildSchedule(emp.sistema, emp.valorContratado, emp.taxa, emp.parcelas)
+      .map((row) => ({ ...row, pago: row.k <= pagoEf }));
   }
 
   return (
@@ -91,6 +88,30 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
           <div className="form-grid-2" style={{ marginBottom: 12 }}>
             <Field label="Instituição Financeira" span={1}><Inp placeholder="Ex: Caixa, Nubank..." value={form.instituicao} onChange={f("instituicao")} /></Field>
             <Field label="Número do Contrato"><Inp placeholder="Opcional" value={form.contrato} onChange={f("contrato")} /></Field>
+            <Field label="Sistema de Amortização" span={2}>
+              <div className="tab-strip" role="tablist" style={{ display: "flex", gap: 8 }}>
+                {SISTEMAS.map((s) => {
+                  const on = sistema === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      onClick={() => setForm((p) => ({ ...p, sistema: s.id }))}
+                      style={{
+                        flex: 1, padding: "9px 12px", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700,
+                        border: `1px solid ${on ? C.accent : C.border}`,
+                        background: on ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "var(--fill)",
+                        color: on ? C.accent : C.subtle,
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
             <Field label="Valor Contratado (R$)"><MoneyInput placeholder="0,00" value={form.valorContratado} onChange={f("valorContratado")} /></Field>
             <Field label="Taxa de Juros Mensal (%)"><Inp type="number" placeholder="Ex: 1.5" value={form.taxa} onChange={f("taxa")} /></Field>
             <Field label="Número de Parcelas"><Inp type="number" placeholder="Ex: 48" value={form.parcelas} onChange={f("parcelas")} /></Field>
@@ -113,9 +134,12 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
           </div>
           {pv > 0 && n > 0 && (
             <div style={{ background: "rgba(99,102,241,0.07)", border: `1px solid rgba(99,102,241,0.2)`, borderRadius: 11, padding: "13px 16px", marginBottom: 14 }}>
-              <STitle>Cálculo pela Tabela Price</STitle>
+              <STitle>{isSAC ? "Cálculo pela Tabela SAC" : "Cálculo pela Tabela Price"}</STitle>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
-                {[{ label: "Valor da Parcela", value: fmt(pmt), color: C.indigo }, { label: "Total a Pagar", value: fmt(pmt * n), color: C.amber }, { label: "Juros Totais", value: fmt(pmt * n - pv), color: C.rose }, { label: "Saldo Devedor Atual", value: fmt(saldo), color: C.cyan }, { label: "Parcelas Restantes", value: restantes, color: C.subtle }, { label: "Parcelas Pagas", value: pago, color: C.emerald }].map((c) => (
+                {(isSAC
+                  ? [{ label: "1ª Parcela", value: fmt(resumo.parcelaInicial), color: C.indigo }, { label: "Última Parcela", value: fmt(resumo.parcelaFinal), color: C.indigo }, { label: "Total a Pagar", value: fmt(resumo.totalPago), color: C.amber }, { label: "Juros Totais", value: fmt(resumo.totalJuros), color: C.rose }, { label: "Saldo Devedor Atual", value: fmt(saldo), color: C.cyan }, { label: "Parcelas Pagas", value: `${pago} de ${n}`, color: C.emerald }]
+                  : [{ label: "Valor da Parcela", value: fmt(resumo.parcelaInicial), color: C.indigo }, { label: "Total a Pagar", value: fmt(resumo.totalPago), color: C.amber }, { label: "Juros Totais", value: fmt(resumo.totalJuros), color: C.rose }, { label: "Saldo Devedor Atual", value: fmt(saldo), color: C.cyan }, { label: "Parcelas Restantes", value: restantes, color: C.subtle }, { label: "Parcelas Pagas", value: pago, color: C.emerald }]
+                ).map((c) => (
                   <div key={c.label} style={{ background: "var(--fill-2)", borderRadius: 9, padding: "10px 12px" }}>
                     <Label>{c.label}</Label>
                     <div style={{ fontSize: 15, fontWeight: 800, color: c.color }}>{c.value}</div>
@@ -141,9 +165,11 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
       {emprestimos.length === 0 && !showForm && <Empty icon="" title="Nenhum empréstimo cadastrado" sub='Clique em "+ Novo empréstimo" para começar.' />}
 
       {empView.map((emp) => {
-        const pmt2 = calcPMT(emp.valorContratado, emp.taxa, emp.parcelas);
+        const sist = normSistema(emp.sistema);
+        const empSAC = sist === "SAC";
         const pagoEf = emp.pagoEfetivo;
-        const sd = calcSaldoDevedor(emp.valorContratado, emp.taxa, emp.parcelas, pagoEf);
+        const pmt2 = calcParcela(sist, emp.valorContratado, emp.taxa, emp.parcelas, pagoEf + 1); // próxima parcela
+        const sd = calcSaldoDevedor(emp.valorContratado, emp.taxa, emp.parcelas, pagoEf, sist);
         const pct = emp.parcelas > 0 ? (pagoEf / emp.parcelas) * 100 : 0;
         const rest = Math.max(0, emp.parcelas - pagoEf);
         const isDetail = detail?.id === emp.id;
@@ -154,6 +180,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   {emp.instituicao}
+                  <span style={{ fontSize: 10, fontWeight: 700, color: C.cyan, background: "color-mix(in srgb, var(--info) 14%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{empSAC ? "SAC" : "Price"}</span>
                   {membrosOrdenados(membros).length > 1 && <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: "color-mix(in srgb, var(--accent) 12%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{nomeMembro(emp.membroId, membros)}</span>}
                 </div>
                 {emp.contrato && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Contrato: {emp.contrato}</div>}
@@ -167,7 +194,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
               </div>
             </div>
             <div className="stat-grid" style={{ marginBottom: 12 }}>
-              {[{ l: "Valor Contratado", v: fmt(emp.valorContratado), c: C.text }, { l: "Parcela (Price)", v: fmt(pmt2), c: C.indigo }, { l: "Saldo Devedor", v: fmt(sd), c: C.rose }, { l: "Taxa Mensal", v: `${emp.taxa}%`, c: C.amber }, { l: "Pagas / Total", v: `${pagoEf} / ${emp.parcelas}`, c: C.subtle }, { l: "Restantes", v: rest, c: rest === 0 ? C.emerald : C.cyan }].map((x) => (
+              {[{ l: "Valor Contratado", v: fmt(emp.valorContratado), c: C.text }, { l: empSAC ? "Próxima Parcela" : "Parcela (Price)", v: fmt(pmt2), c: C.indigo }, { l: "Saldo Devedor", v: fmt(sd), c: C.rose }, { l: "Taxa Mensal", v: `${emp.taxa}%`, c: C.amber }, { l: "Pagas / Total", v: `${pagoEf} / ${emp.parcelas}`, c: C.subtle }, { l: "Restantes", v: rest, c: rest === 0 ? C.emerald : C.cyan }].map((x) => (
                 <div key={x.l} style={{ background: "var(--fill-2)", borderRadius: 8, padding: "9px 11px" }}>
                   <Label>{x.l}</Label>
                   <div style={{ fontSize: 13, fontWeight: 700, color: x.c }}>{x.v}</div>
@@ -193,7 +220,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
             {isDetail && (
               <div style={{ marginTop: 14 }}>
                 <Divider />
-                <STitle>Tabela Price completa</STitle>
+                <STitle>{empSAC ? "Tabela SAC completa" : "Tabela Price completa"}</STitle>
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                     <thead>
