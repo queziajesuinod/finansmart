@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, liquidoHolerite, rendasExtrasDoMes } from "../lib/constants";
+import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes } from "../lib/constants";
 import { calcParcela, calcSaldoDevedor, calcParcelasPagas } from "../lib/finance";
 import * as api from "../lib/api";
 import DashboardTab from "./tabs/DashboardTab.jsx";
@@ -118,9 +118,10 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const setIncome = (k, v) => saveIncomes({ ...incomes, [mk]: { ...income, [k]: v } });
   const setDespesasMk = (fn) => { const next = typeof fn === "function" ? fn(despesas) : fn; saveDespesas({ ...allDespesas, [mk]: next }); };
 
-  // Renda fixa estruturada: soma dos líquidos dos holerites vigentes no mês.
+  // Renda fixa estruturada: soma da renda dos holerites vigentes no mês
+  // (líquido + benefícios/outros rendimentos).
   const holeritesDoMes = useMemo(() => holeritesVigentes(holerites, year, monthIdx), [holerites, year, monthIdx]);
-  const rendaHoleritesNum = useMemo(() => holeritesDoMes.reduce((s, h) => s + liquidoHolerite(h), 0), [holeritesDoMes]);
+  const rendaHoleritesNum = useMemo(() => holeritesDoMes.reduce((s, h) => s + rendaHolerite(h), 0), [holeritesDoMes]);
   const temHoleriteMes = holeritesDoMes.length > 0;
 
   // Salário manual: usa o explícito do mês; se vazio, herda o último mês — MAS só

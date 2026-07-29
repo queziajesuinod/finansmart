@@ -1,11 +1,11 @@
 // @ts-nocheck
 // Renda por membro: cadastro de N holerites (renda fixa) e N rendas extras por
-// pessoa. A renda fixa do mês é a soma dos líquidos dos holerites vigentes
-// (líquido = salário bruto − descontos). Benefícios ("outros rendimentos") são
-// informativos e NÃO entram na renda fixa.
+// pessoa. A renda fixa do mês é a soma da renda dos holerites vigentes
+// (líquido = salário bruto − descontos; + benefícios/"outros rendimentos").
+// Os benefícios contam na renda fixa.
 import { useState } from "react";
 import { Card, MoneyInput, Btn, Label, Inp } from "./ui";
-import { C, fmt, genId, mesRefDe, holeritesVigentes, liquidoHolerite, totalOutrosRendimentos, rendasExtrasDoMes, MONTH_NAMES } from "../lib/constants";
+import { C, fmt, genId, mesRefDe, holeritesVigentes, rendaHolerite, totalOutrosRendimentos, rendasExtrasDoMes, MONTH_NAMES } from "../lib/constants";
 import { membrosOrdenados, principalId, principalDe } from "./Membros.jsx";
 import { ScrollText, Wallet, Plus, Trash2, X, Check, Pencil } from "../lib/icons.jsx";
 
@@ -89,6 +89,8 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
   function removerExtra(id) { setRendasExtras((rendasExtras || []).filter((x) => x.id !== id)); }
 
   const liquidoEdit = editH ? n(editH.salarioBruto) - (editH.descontos || []).reduce((s, d) => s + n(d.valor), 0) : 0;
+  const beneficiosEdit = editH ? (editH.outrosRendimentos || []).reduce((s, d) => s + n(d.valor), 0) : 0;
+  const rendaEdit = liquidoEdit + beneficiosEdit;
 
   return (
     <Card style={{ marginTop: 14 }}>
@@ -122,7 +124,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
           ))}
           <button onClick={() => setEditH({ ...editH, descontos: [...(editH.descontos || []), { nome: "", valor: "" }] })} style={{ background: "transparent", border: `1px dashed ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 10px", fontSize: 12, cursor: "pointer", marginBottom: 12, display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={13} /> desconto</button>
 
-          <Label>Outros rendimentos (VR, VA…) — não entram na renda fixa</Label>
+          <Label>Outros rendimentos (VR, VA…) — contam na renda fixa</Label>
           {(editH.outrosRendimentos || []).map((d, i) => (
             <LinhaValor key={i} item={d} placeholder="Ex.: Vale Refeição"
               onNome={(v) => setEditH({ ...editH, outrosRendimentos: editH.outrosRendimentos.map((x, j) => (j === i ? { ...x, nome: v } : x)) })}
@@ -136,9 +138,14 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
             Repetir nos próximos meses (renda fixa recorrente)
           </label>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: `1px solid ${C.border}`, marginBottom: 12 }}>
-            <span style={{ fontSize: 12, color: C.muted }}>Salário líquido</span>
-            <span style={{ fontSize: 16, fontWeight: 800, color: C.emerald }}>{fmt(liquidoEdit)}</span>
+          <div style={{ padding: "10px 0", borderTop: `1px solid ${C.border}`, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: C.muted }}>Renda (líquido + benefícios)</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: C.emerald }}>{fmt(rendaEdit)}</span>
+            </div>
+            {beneficiosEdit > 0 && (
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>líquido {fmt(liquidoEdit)} · benefícios {fmt(beneficiosEdit)}</div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="success" onClick={salvarHolerite} style={{ flex: 1 }}><Check size={15} style={{ marginRight: 6 }} /> Salvar</Btn>
@@ -151,7 +158,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
       {blocos.map((b) => {
         const hs = holsVig.filter((h) => mesmo(h.membroId, b.key));
         const exs = extrasMes.filter((r) => mesmo(r.membroId, b.key));
-        const liq = hs.reduce((s, h) => s + liquidoHolerite(h), 0);
+        const liq = hs.reduce((s, h) => s + rendaHolerite(h), 0);
         const totExtra = exs.reduce((s, r) => s + (Number(r.valor) || 0), 0);
         return (
           <div key={b.key || "principal"} style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 12 }}>
@@ -167,7 +174,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
                   <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.titulo || "Holerite"}{h.recorrente === false ? " (só este mês)" : ""}{h.mesRef !== mr ? <span style={{ fontWeight: 600, color: C.accent }}> · desde {labelMesRef(h.mesRef)}</span> : null}</div>
                   <div style={{ fontSize: 10, color: C.muted }}>bruto {fmt(Number(h.salarioBruto) || 0)}{totalOutrosRendimentos(h) > 0 ? ` · benefícios ${fmt(totalOutrosRendimentos(h))}` : ""}</div>
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 800, color: C.emerald, flexShrink: 0 }}>{fmt(liquidoHolerite(h))}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: C.emerald, flexShrink: 0 }}>{fmt(rendaHolerite(h))}</span>
                 <button onClick={() => editarHolerite(h)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Pencil size={14} /></button>
                 <button onClick={() => removerHolerite(h.id)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Trash2 size={14} /></button>
               </div>

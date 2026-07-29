@@ -113,6 +113,11 @@ export function liquidoHolerite(h) {
 export function totalOutrosRendimentos(h) {
   return ((h && h.outrosRendimentos) || []).reduce((s, r) => s + (Number(r && r.valor) || 0), 0);
 }
+// Renda do holerite = líquido + benefícios (outros rendimentos, ex.: VR/VA).
+// Os benefícios contam como renda.
+export function rendaHolerite(h) {
+  return liquidoHolerite(h) + totalOutrosRendimentos(h);
+}
 
 // Holerites vigentes num mês: recorrentes valem do seu mesRef em diante (o mais
 // recente por membro+título "vence"); não-recorrentes valem só no próprio mês.
