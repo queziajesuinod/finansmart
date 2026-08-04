@@ -1,8 +1,10 @@
 // Configura o Passport para login com Google.
 // A estratégia só é registrada se as credenciais estiverem no .env.
+const crypto = require("crypto");
 const passport = require("passport");
 const { Strategy: GoogleStrategy } = require("passport-google-oauth20");
-const { User } = require("../models");
+const { User, Membro } = require("../models");
+const { ensureDefaultSubscription } = require("../services/access");
 
 const enabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
@@ -30,9 +32,11 @@ if (enabled) {
               await user.save();
             }
           }
-          // 3) senão, cria uma conta nova (sem senha)
+          // 3) senão, cria uma conta nova (sem senha) + membro principal + assinatura padrão.
           if (!user) {
             user = await User.create({ nome, email, googleId, senhaHash: null });
+            await Membro.create({ id: crypto.randomUUID(), userId: user.id, nome: user.nome, tipo: "principal", ordem: 0, ativo: true });
+            await ensureDefaultSubscription(user.id);
           }
           return done(null, user);
         } catch (err) {

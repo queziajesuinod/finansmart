@@ -207,6 +207,12 @@ function UserRow({ u, plans, reload, flash, fail }) {
   const [dias, setDias] = useState("30");
   const liberado = u.subscription?.liberado;
 
+  // Os planos carregam de forma assíncrona; se a linha montou antes deles,
+  // o slug fica vazio e o "Liberar" enviaria plano em branco. Sincroniza aqui.
+  useEffect(() => {
+    if (plans.length && !plans.some((p) => p.slug === planSlug)) setPlanSlug(plans[0].slug);
+  }, [plans]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function grant() { try { await admin.userGrant(u.id, { planSlug, dias: Number(dias) || 30 }); flash(`Acesso liberado para ${u.email}.`); reload(); } catch (e) { fail(e); } }
   async function revoke() { try { await admin.userRevoke(u.id); flash(`Acesso revogado de ${u.email}.`); reload(); } catch (e) { fail(e); } }
   async function toggleRole() { try { await admin.userRole(u.id, { role: u.role === "admin" ? "cliente" : "admin" }); flash("Papel atualizado."); reload(); } catch (e) { fail(e); } }

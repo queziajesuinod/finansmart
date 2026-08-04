@@ -1,6 +1,19 @@
 // Centraliza o cálculo de "o usuário está liberado?" e "quais módulos ele acessa".
 const { Subscription, Plan, Module, Membro } = require("../models");
 
+// Plano que todo usuário novo recebe ao se cadastrar. Trocável via env.
+const DEFAULT_PLAN_SLUG = process.env.DEFAULT_PLAN_SLUG || "completo";
+
+// Garante que o usuário tenha uma assinatura ativa no plano padrão.
+// Idempotente: não faz nada se já existir uma assinatura ativa/trial.
+async function ensureDefaultSubscription(userId) {
+  const jaTem = await Subscription.findOne({ where: { userId, status: ["active", "trialing"] } });
+  if (jaTem) return jaTem;
+  const plan = await Plan.findOne({ where: { slug: DEFAULT_PLAN_SLUG } });
+  if (!plan) return null; // banco sem o plano padrão → segue sem assinatura (cai no fail-open).
+  return Subscription.create({ userId, planId: plan.id, status: "active", currentPeriodEnd: null });
+}
+
 // Conta dependentes ativos e calcula o preço efetivo (base + deps × valor/dependente).
 async function precoInfo(userId, plan) {
   const numDependentes = await Membro.count({ where: { userId, tipo: "dependente", ativo: true } });
@@ -92,4 +105,4 @@ async function getAccessState(user) {
   };
 }
 
-module.exports = { getVigenteSubscription, getAccessState };
+module.exports = { getVigenteSubscription, getAccessState, ensureDefaultSubscription };

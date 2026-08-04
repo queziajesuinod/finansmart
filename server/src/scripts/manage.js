@@ -8,7 +8,8 @@
 //   npm run manage -- plan:set-modules <slug> <chave1,chave2,...>
 //
 require("dotenv").config();
-const { sequelize, Module, Plan, PlanModule } = require("../models");
+const { sequelize, Module, Plan, PlanModule, User } = require("../models");
+const { ensureDefaultSubscription } = require("../services/access");
 
 async function modulesList() {
   const mods = await Module.findAll({ order: [["ordem", "ASC"]] });
@@ -66,6 +67,20 @@ async function planSetModules(slug, chavesCsv) {
   console.log(`✅ Plano "${plan.nome}" agora tem ${ligadas.length} módulos: ${ligadas.sort().join(", ")}`);
 }
 
+// Dá o plano padrão (Completo) a todo usuário sem assinatura ativa. Idempotente.
+async function usersProvisionDefaults() {
+  const { Subscription } = require("../models");
+  const users = await User.findAll();
+  let criadas = 0;
+  for (const u of users) {
+    if (u.role === "admin") continue; // admin não precisa de assinatura
+    const jaTinha = await Subscription.findOne({ where: { userId: u.id, status: ["active", "trialing"] } });
+    await ensureDefaultSubscription(u.id);
+    if (!jaTinha) { criadas++; console.log(`  + ${u.email}`); }
+  }
+  console.log(`✅ ${users.length} usuários verificados; ${criadas} assinatura(s) criada(s) no plano padrão.`);
+}
+
 const [cmd, ...args] = process.argv.slice(2);
 const commands = {
   "modules:list": () => modulesList(),
@@ -74,6 +89,7 @@ const commands = {
   "plans:list": () => plansList(),
   "plan:add": () => planAdd(args[0], args[1], args[2], args[3]),
   "plan:set-modules": () => planSetModules(args[0], args[1]),
+  "users:provision-defaults": () => usersProvisionDefaults(),
 };
 
 (async () => {

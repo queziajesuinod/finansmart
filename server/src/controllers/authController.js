@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { User, Membro } = require("../models");
 const { hashPassword, verifyPassword } = require("../utils/password");
 const { signToken } = require("../utils/jwt");
-const { getAccessState } = require("../services/access");
+const { getAccessState, ensureDefaultSubscription } = require("../services/access");
 
 function tokenFor(user) {
   return signToken({ sub: user.id, role: user.role });
@@ -47,8 +47,10 @@ async function register(req, res, next) {
     }
     await Membro.bulkCreate(membros);
 
+    // Usuário novo já entra com uma assinatura ativa no plano padrão (Completo).
+    await ensureDefaultSubscription(user.id);
+
     const access = await getAccessState(user);
-    // Usuário novo entra sem assinatura ativa → liberado=false até pagar.
     return res.status(201).json({ token: tokenFor(user), user: user.toSafeJSON(), access });
   } catch (err) {
     next(err);
