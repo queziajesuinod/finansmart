@@ -6,7 +6,6 @@ import * as api from "../lib/api";
 import DashboardTab from "./tabs/DashboardTab.jsx";
 import LancamentosTab from "./tabs/LancamentosTab.jsx";
 import ExtratoTab from "./tabs/ExtratoTab.jsx";
-import ImportarTab from "./tabs/ImportarTab.jsx";
 import CartoesTab from "./tabs/CartoesTab.jsx";
 import EmprestimosTab from "./tabs/EmprestimosTab.jsx";
 import ParceladosTab from "./tabs/ParceladosTab.jsx";
@@ -254,7 +253,6 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     { id: "dashboard", label: "Visão Geral" },
     { id: "lancamentos", label: "Lançamentos" },
     { id: "extrato", label: "Extrato" },
-    { id: "importar", label: "Importar PDF" },
     { id: "cartoes", label: "Cartões de Crédito" },
     { id: "emprestimos", label: "Empréstimos" },
     { id: "parcelados", label: "Parcelados" },
@@ -328,8 +326,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
         {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
         {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
-        {tab === "importar" && tabPermitida("importar") && <ImportarTab setDespesasMk={setDespesasMk} year={year} monthIdx={monthIdx} cartoes={cartoes} setCartoes={saveCartoes} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} cardProfiles={cardProfiles} setTab={setTab} membros={membros} setMembros={saveMembros} temAssistente={tabPermitida("assistente")} access={access} />}
-        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} membros={membros} year={year} monthIdx={monthIdx} />}
+        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} cardProfilesImport={cardProfiles} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} membros={membros} setMembros={saveMembros} temImportar={tabPermitida("importar")} temAssistente={tabPermitida("assistente")} access={access} year={year} monthIdx={monthIdx} />}
         {tab === "emprestimos" && tabPermitida("emprestimos") && <EmprestimosTab emprestimos={emprestimos} setEmprestimos={saveEmprestimos} membros={membros} />}
         {tab === "parcelados" && tabPermitida("parcelados") && <ParceladosTab parcelados={parcelados} setParcelados={saveParcelados} year={year} monthIdx={monthIdx} membros={membros} />}
         {tab === "metas" && tabPermitida("metas") && <MetasTab goals={goals} setGoals={saveGoals} />}

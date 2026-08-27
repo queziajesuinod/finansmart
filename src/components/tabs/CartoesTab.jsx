@@ -2,11 +2,13 @@
 import { useState, useEffect } from "react";
 import { C, CATEGORIES, MONTH_NAMES, fmt, fmtPct, catById, genId, tint } from "../../lib/constants";
 import { Card, Label, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
-import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save, Pencil, X } from "../../lib/icons.jsx";
+import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save, Pencil, X, FilePlus, Undo2 } from "../../lib/icons.jsx";
 import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
 import { nomeMembro, membroEfetivo } from "../Membros.jsx";
+import ImportarTab from "./ImportarTab.jsx";
 
-export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles, membros = [], year, monthIdx }) {
+export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles, cardProfilesImport, parcelados, setParcelados, categoryRules, setCategoryRules, membros = [], setMembros, temImportar = false, temAssistente = false, access = null, year, monthIdx }) {
+  const [importOpen, setImportOpen] = useState(false);
   const [aberto, setAberto] = useState(null);
   const [aba, setAba] = useState({});
   const [filtroPort, setFiltroPort] = useState({});
@@ -82,15 +84,44 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
   const totalSaldoDevedor = cartoesMesKeys.reduce((s, k) => s + (saldoInfo[k] ? saldoInfo[k].saldoDevedor : 0), 0);
   const totalDisponivel = cartoesMesKeys.reduce((s, k) => s + dispDe(k), 0);
 
+  // Importador de fatura (PDF) embutido: fica dentro desta aba porque toda
+  // fatura importada vira um cartão de crédito aqui mesmo.
+  if (importOpen) {
+    return (
+      <div>
+        <button onClick={() => setImportOpen(false)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--fill-2)", border: `1px solid ${C.border}`, color: C.subtle, borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}><Undo2 size={14} /> Voltar aos cartões</button>
+        <ImportarTab
+          year={year}
+          monthIdx={monthIdx}
+          cartoes={cartoes}
+          setCartoes={setCartoes}
+          parcelados={parcelados}
+          setParcelados={setParcelados}
+          categoryRules={categoryRules}
+          setCategoryRules={setCategoryRules}
+          cardProfiles={cardProfilesImport}
+          setTab={() => setImportOpen(false)}
+          membros={membros}
+          setMembros={setMembros}
+          temAssistente={temAssistente}
+          access={access}
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
+      {temImportar && (
+        <button onClick={() => setImportOpen(true)} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: `var(--accent)`, border: "none", color: "#fff", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}><FilePlus size={16} /> Importar fatura (PDF)</button>
+      )}
       <MeusCartoes cardProfiles={cardProfiles} setCardProfiles={setCardProfiles} />
 
       {semFaturasMes && (
         <Empty icon="" title={mk == null ? "Nenhuma fatura importada" : `Nenhuma fatura de ${mesNome}`}
           sub={outrosMeses > 0
             ? `Você tem ${outrosMeses} fatura${outrosMeses > 1 ? "s" : ""} em outros meses — navegue pelos meses no topo para vê-las.`
-            : 'Use a aba "Importar PDF" para adicionar a fatura de um cartão.'} />
+            : 'Use o botão "Importar fatura (PDF)" acima para adicionar a fatura de um cartão.'} />
       )}
 
       {!semFaturasMes && (

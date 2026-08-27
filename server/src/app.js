@@ -8,6 +8,12 @@ const errorHandler = require("./middleware/error");
 
 const app = express();
 
+// Em produção a API roda atrás de um proxy reverso (ex: nginx). Isso faz o
+// req.ip refletir o cliente real (via X-Forwarded-For) — essencial para o
+// rate limit por IP não tratar todo mundo como o mesmo endereço do proxy.
+// TRUST_PROXY = nº de proxies confiáveis (1 = um nginx na frente). 0 desliga.
+app.set("trust proxy", Number(process.env.TRUST_PROXY || 1));
+
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://127.0.0.1:4173",

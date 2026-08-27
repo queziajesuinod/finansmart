@@ -3,33 +3,31 @@ import { useState, useEffect } from "react";
 import { SearchX } from "lucide-react";
 import { C, tint } from "../lib/constants";
 
-// ─── Valor monetário (formata BR "1.234,56" enquanto digita) ──────────────
-// Formata o que o usuário digita (vírgula = decimal) em "1.234,56".
-function fmtDigitandoBR(str) {
-  let s = String(str ?? "").replace(/[^\d,]/g, "");
-  const i = s.indexOf(",");
-  let intPart, decPart = null;
-  if (i >= 0) { intPart = s.slice(0, i).replace(/,/g, ""); decPart = s.slice(i + 1).replace(/,/g, "").slice(0, 2); }
-  else intPart = s;
-  intPart = intPart.replace(/^0+(?=\d)/, "");
-  const intFmt = intPart === "" ? (decPart != null ? "0" : "") : intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return decPart != null ? `${intFmt},${decPart}` : intFmt;
+// ─── Valor monetário (estilo caixa: preenche da direita, sem vírgula manual) ──
+// Cada dígito digitado entra pelos centavos: "5"→"0,05", "123"→"1,23",
+// "12345"→"123,45". Vírgula/pontos aparecem sozinhos. Vazio continua vazio.
+function fmtCentavosBR(str) {
+  const digits = String(str ?? "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (digits === "") return "";
+  const padded = digits.padStart(3, "0"); // garante ao menos "0,0X"
+  const intPart = padded.slice(0, -2).replace(/^0+(?=\d)/, "") || "0";
+  const decPart = padded.slice(-2);
+  return `${intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${decPart}`;
 }
 // Display BR "1.234,56" → número limpo "1234.56" (para o resto do app).
 function brParaNumStr(brStr) {
   return String(brStr ?? "").replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
 }
-// Valor guardado ("1234.56" | número) → display BR "1.234,56".
+// Valor guardado (número em reais, ex.: 12200.5) → display BR "12.200,50".
 function numParaBR(v) {
   if (v === "" || v == null) return "";
   let s = String(v).replace(/[^\d.,]/g, "");
   if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
   if (s === "" || s === ".") return "";
-  const [intRaw, decRaw] = s.split(".");
-  const intPart = (intRaw || "").replace(/^0+(?=\d)/, "");
-  if (intPart === "" && (decRaw == null || decRaw === "")) return "";
-  const intFmt = (intPart || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return decRaw != null && decRaw !== "" ? `${intFmt},${decRaw.slice(0, 2)}` : intFmt;
+  const n = parseFloat(s);
+  if (isNaN(n)) return "";
+  const [intRaw, decRaw] = n.toFixed(2).split(".");
+  return `${intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${decRaw}`;
 }
 const _floatDe = (v) => { const n = parseFloat(String(v ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
 
@@ -41,7 +39,7 @@ export function MoneyInput({ value, onChange, style = {}, ...p }) {
     if (_floatDe(brParaNumStr(display)) !== _floatDe(value)) setDisplay(numParaBR(value));
   }, [value]);
   function handle(e) {
-    const f = fmtDigitandoBR(e.target.value);
+    const f = fmtCentavosBR(e.target.value);
     setDisplay(f);
     onChange && onChange({ target: { value: brParaNumStr(f) } });
   }

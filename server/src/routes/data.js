@@ -2,16 +2,17 @@
 const { Router } = require("express");
 const c = require("../controllers/stateController");
 const { aiImport, assistant } = require("../controllers/importController");
+const { aiLimiter } = require("../middleware/rateLimit");
 
 const router = Router();
 
 router.get("/state", c.getState);
 
 // Leitura de fatura com IA (reforço quando o parser local não bate o total).
-router.post("/import/ai", aiImport);
+router.post("/import/ai", aiLimiter, aiImport);
 
 // Assistente financeiro (IA sobre os dados do próprio usuário).
-router.post("/assistant", assistant);
+router.post("/assistant", aiLimiter, assistant);
 
 router.put("/incomes", c.putIncomes);
 router.put("/despesas", c.putDespesas);

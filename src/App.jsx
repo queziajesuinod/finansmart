@@ -20,12 +20,12 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      // Retorno do login com Google: ?token=... na URL.
-      const params = new URLSearchParams(window.location.search);
-      const urlToken = params.get("token");
+      // Retorno do login com Google: token no fragmento (#token=...).
+      const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+      const urlToken = new URLSearchParams(hash).get("token");
       if (urlToken) {
         setToken(urlToken);
-        window.history.replaceState({}, "", window.location.pathname); // limpa a query
+        window.history.replaceState({}, "", window.location.pathname); // remove o fragmento da URL
       }
 
       if (getToken()) {

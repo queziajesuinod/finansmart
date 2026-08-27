@@ -2,12 +2,13 @@ const { Router } = require("express");
 const { passport, googleEnabled } = require("../config/passport");
 const authController = require("../controllers/authController");
 const requireAuth = require("../middleware/auth");
+const { authLimiter } = require("../middleware/rateLimit");
 const { aiEnabled } = require("../services/aiImport");
 
 const router = Router();
 
-router.post("/register", authController.register);
-router.post("/login", authController.login);
+router.post("/register", authLimiter, authController.register);
+router.post("/login", authLimiter, authController.login);
 
 // Login com Google (só ativo se as credenciais estiverem configuradas).
 if (googleEnabled) {
@@ -29,6 +30,6 @@ router.get("/me", requireAuth, authController.me);
 
 // Perfil.
 router.put("/profile", requireAuth, authController.updateProfile);
-router.post("/change-password", requireAuth, authController.changePassword);
+router.post("/change-password", authLimiter, requireAuth, authController.changePassword);
 
 module.exports = router;

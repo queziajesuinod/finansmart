@@ -49,7 +49,10 @@ module.exports = {
     ? {
         use_env_variable: "DATABASE_URL",
         ...common,
-        dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
+        // rejectUnauthorized=false aceita certificado autoassinado (risco de
+        // MITM na conexão do banco). Defina DB_SSL_REJECT_UNAUTHORIZED=true
+        // quando o Postgres tiver um certificado válido/confiável.
+        dialectOptions: { ssl: { require: true, rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === "true" } },
       }
     : fromParts(),
 };

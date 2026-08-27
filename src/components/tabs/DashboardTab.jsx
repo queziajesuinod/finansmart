@@ -134,7 +134,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       <AssinaturasPanel assinaturas={assinaturas} minMeses={assinMinMeses} onMinMeses={onAssinMinMeses} />
 
       {totalRenda === 0 && <Empty icon="" title="Informe sua renda para começar" sub="Preencha o campo de renda acima." />}
-      {totalRenda > 0 && despesas.length === 0 && <Empty icon="" title="Nenhuma despesa ainda" sub='Use "Lançamentos" ou "Importar PDF".' />}
+      {totalRenda > 0 && despesas.length === 0 && <Empty icon="" title="Nenhuma despesa ainda" sub='Use "Lançamentos" ou importe uma fatura em "Cartões de Crédito".' />}
     </div>
   );
 }

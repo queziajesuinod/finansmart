@@ -67,7 +67,10 @@ async function login(req, res, next) {
     }
 
     const user = await User.findOne({ where: { email: emailNorm } });
-    if (!user || !(await verifyPassword(String(senha), user.senhaHash))) {
+    // Roda o compare SEMPRE (mesmo sem usuário) para o tempo de resposta não
+    // revelar se o e-mail existe — verifyPassword usa um hash fantasma se faltar.
+    const senhaOk = await verifyPassword(String(senha), user && user.senhaHash);
+    if (!user || !user.senhaHash || !senhaOk) {
       return res.status(401).json({ error: "E-mail ou senha incorretos.", code: "invalid_credentials" });
     }
 
@@ -93,8 +96,10 @@ async function me(req, res, next) {
 function googleCallback(req, res) {
   const token = tokenFor(req.user);
   const base = process.env.FRONTEND_URL || "http://127.0.0.1:4173";
-  // Redireciona para a raiz da SPA com o token na query (evita depender de rotas no Vite).
-  return res.redirect(`${base}/?token=${encodeURIComponent(token)}&google=1`);
+  // Token no FRAGMENTO (#), não na query (?): o fragmento não é enviado ao
+  // servidor (não entra em access log) nem vaza via header Referer. A SPA lê e
+  // limpa da URL logo em seguida.
+  return res.redirect(`${base}/#token=${encodeURIComponent(token)}&google=1`);
 }
 
 // PUT /auth/profile — atualiza dados básicos do usuário.
