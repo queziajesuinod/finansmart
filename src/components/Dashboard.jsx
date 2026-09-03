@@ -1,14 +1,13 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes } from "../lib/constants";
-import { calcParcela, calcSaldoDevedor, calcParcelasPagas } from "../lib/finance";
+import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes, addMonths } from "../lib/constants";
+import { calcParcelasPagas, emprestimoEstado } from "../lib/finance";
 import * as api from "../lib/api";
 import DashboardTab from "./tabs/DashboardTab.jsx";
 import LancamentosTab from "./tabs/LancamentosTab.jsx";
 import ExtratoTab from "./tabs/ExtratoTab.jsx";
 import CartoesTab from "./tabs/CartoesTab.jsx";
 import EmprestimosTab from "./tabs/EmprestimosTab.jsx";
-import ParceladosTab from "./tabs/ParceladosTab.jsx";
 import MetasTab from "./tabs/MetasTab.jsx";
 import HistoricoTab from "./tabs/HistoricoTab.jsx";
 import AssistenteTab from "./tabs/AssistenteTab.jsx";
@@ -39,12 +38,14 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const [parcelados, setParcelados] = useState([]);
   const [cartoes, setCartoes] = useState([]);
   const [categoryRules, setCategoryRules] = useState({});
+  const [globalCategoryRules, setGlobalCategoryRules] = useState({});
   const [cardProfilesDB, setCardProfilesDB] = useState([]);
   const [holerites, setHolerites] = useState([]);
   const [rendasExtras, setRendasExtras] = useState([]);
   const [chat, setChat] = useState([{ role: "assistant", content: "Olá! Sou seu assistente financeiro. Posso analisar seus gastos, calcular dívidas, comparar meses e dar dicas práticas. Como posso te ajudar?" }]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [erroSync, setErroSync] = useState("");
+  const [avisoGlobal, setAvisoGlobal] = useState("");
 
   // Carrega tudo da API na montagem.
   useEffect(() => {
@@ -59,6 +60,8 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
         setParcelados(s.parcelados);
         setCartoes(s.cartoes);
         setCategoryRules(s.categoryRules || {});
+        setGlobalCategoryRules(s.globalCategoryRules || {});
+        setAvisoGlobal(s.avisoGlobal || "");
         setCardProfilesDB(s.cardProfiles || []);
         setHolerites(s.holerites || []);
         setRendasExtras(s.rendasExtras || []);
@@ -147,7 +150,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
 
   const parcelasMensais = useMemo(() => emprestimos.reduce((s, e) => {
     const pago = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
-    return s + (pago < e.parcelas ? calcParcela(e.sistema, e.valorContratado, e.taxa, e.parcelas, pago + 1) : 0);
+    return s + emprestimoEstado(e, pago).proxima; // próxima parcela (já com aportes/amortizações)
   }, 0), [emprestimos]);
 
   // Parcelas do mês vindas da aba Parcelados. IMPORTANTE: se a parcela já está
@@ -161,7 +164,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     const refFim = new Date(year, monthIdx + 1, 0);
     return parcelados.reduce((s, p) => {
       const ini = new Date(p.dataCompra + "T12:00:00");
-      const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1);
+      const fim = addMonths(p.dataCompra, p.totalParcelas - 1);
       if (!(ini <= refFim && fim >= ref)) return s; // não ativa neste mês
       const jaNaFatura = cartoesMes.some((c) =>
         (c.compras || []).some((x) => x.parcelas > 1 && x.parcelas === p.totalParcelas && Math.abs((x.valor || 0) - p.valorParcela) < 0.01)
@@ -186,12 +189,11 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const saldoAtual = totalRenda - totalDespesas;
   const totalEmprestimos = useMemo(() => emprestimos.reduce((s, e) => {
     const pago = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
-    return s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, pago, e.sistema);
+    return s + emprestimoEstado(e, pago).saldo; // saldo devedor (já com aportes/amortizações)
   }, 0), [emprestimos]);
 
   const parcelVencendoMes = useMemo(() => parcelados.filter((p) => {
-    const inicio = new Date(p.dataCompra + "T12:00:00");
-    const fim = new Date(inicio); fim.setMonth(fim.getMonth() + p.totalParcelas - 1);
+    const fim = addMonths(p.dataCompra, p.totalParcelas - 1);
     return fim.getFullYear() === year && fim.getMonth() === monthIdx;
   }), [parcelados, year, monthIdx]);
 
@@ -255,7 +257,6 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     { id: "extrato", label: "Extrato" },
     { id: "cartoes", label: "Cartões de Crédito" },
     { id: "emprestimos", label: "Empréstimos" },
-    { id: "parcelados", label: "Parcelados" },
     { id: "metas", label: "Metas" },
     { id: "historico", label: "Histórico" },
     { id: "assistente", label: "Assistente IA" },
@@ -282,6 +283,12 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   }, [tab]);
 
   if (!dataLoaded) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "sans-serif" }}>Carregando seus dados...</div>;
+
+  // Administração é uma PÁGINA de gestão à parte: assume a tela inteira, sem o
+  // shell do app público (topo com mês, tab-strip). "Voltar ao app" retorna às abas.
+  if (tab === "admin" && access?.admin) {
+    return <AdminTab user={user} onBack={() => setTab(TABS.find((t) => t.id !== "admin")?.id || "dashboard")} onLogout={onLogout} />;
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Segoe UI',sans-serif", color: C.text }}>
@@ -321,18 +328,17 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
       </div>
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "18px 12px 48px" }}>
+        {avisoGlobal && <div style={{ background: tint(C.accent, 10), border: `1px solid ${tint(C.accent, 28)}`, borderLeft: `3px solid ${C.accent}`, color: C.subtle, borderRadius: 10, padding: "10px 14px", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>{avisoGlobal}</div>}
         {erroSync && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: C.red, borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 14 }}>{erroSync}</div>}
 
         {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
         {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
-        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} cardProfilesImport={cardProfiles} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} membros={membros} setMembros={saveMembros} temImportar={tabPermitida("importar")} temAssistente={tabPermitida("assistente")} access={access} year={year} monthIdx={monthIdx} />}
+        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} cardProfilesImport={cardProfiles} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} globalCategoryRules={globalCategoryRules} membros={membros} setMembros={saveMembros} temImportar temAssistente={tabPermitida("assistente")} access={access} year={year} monthIdx={monthIdx} />}
         {tab === "emprestimos" && tabPermitida("emprestimos") && <EmprestimosTab emprestimos={emprestimos} setEmprestimos={saveEmprestimos} membros={membros} />}
-        {tab === "parcelados" && tabPermitida("parcelados") && <ParceladosTab parcelados={parcelados} setParcelados={saveParcelados} year={year} monthIdx={monthIdx} membros={membros} />}
         {tab === "metas" && tabPermitida("metas") && <MetasTab goals={goals} setGoals={saveGoals} />}
         {tab === "historico" && tabPermitida("historico") && <HistoricoTab historicoMeses={historicoMeses} />}
         {tab === "assistente" && tabPermitida("assistente") && <AssistenteTab chat={chat} setChat={setChat} totalRenda={totalRenda} totalDespesas={totalDespesas} saldoAtual={saldoAtual} projecao={projecao} statusInfo={statusInfo} porCategoria={porCategoria} goals={goals} emprestimos={emprestimos} parcelados={parcelados} monthIdx={monthIdx} year={year} />}
-        {tab === "admin" && access?.admin && <AdminTab />}
       </div>
 
       {profileOpen && <ProfileModal user={user} onClose={() => setProfileOpen(false)} onUpdated={onUserUpdate} membros={membros} onSaveMembros={saveMembrosCascade} access={access} />}

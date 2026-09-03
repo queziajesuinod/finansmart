@@ -17,9 +17,10 @@ export default function AuthScreen({ onLogin }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [cadastroPublico, setCadastroPublico] = useState(true);
 
   useEffect(() => {
-    authConfig().then((c) => setGoogleEnabled(Boolean(c.googleEnabled)));
+    authConfig().then((c) => { setGoogleEnabled(Boolean(c.googleEnabled)); setCadastroPublico(c.cadastroPublico !== false); if (c.cadastroPublico === false) setMode("login"); });
     getPlans().then((ps) => setPlans(ps || [])).catch(() => {});
     // Mostra erro se o callback do Google falhou.
     const p = new URLSearchParams(window.location.search);
@@ -138,10 +139,14 @@ export default function AuthScreen({ onLogin }) {
           </Btn>
 
           <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted }}>
-            {mode === "login" ? "Não tem conta? " : "Já tem conta? "}
-            <span onClick={() => { setMode((m) => (m === "login" ? "register" : "login")); setErr(""); }} style={{ color: C.indigo, cursor: "pointer", fontWeight: 700 }}>
-              {mode === "login" ? "Cadastre-se" : "Entrar"}
-            </span>
+            {cadastroPublico ? (
+              <>
+                {mode === "login" ? "Não tem conta? " : "Já tem conta? "}
+                <span onClick={() => { setMode((m) => (m === "login" ? "register" : "login")); setErr(""); }} style={{ color: C.indigo, cursor: "pointer", fontWeight: 700 }}>
+                  {mode === "login" ? "Cadastre-se" : "Entrar"}
+                </span>
+              </>
+            ) : "Novos cadastros estão fechados no momento (acesso por convite)."}
           </div>
         </Card>
 

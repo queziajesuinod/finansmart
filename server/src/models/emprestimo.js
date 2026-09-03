@@ -17,6 +17,10 @@ module.exports = (sequelize, DataTypes) => {
       dataPrimeira: { type: DataTypes.DATEONLY, allowNull: true },
       dataQuitacao: { type: DataTypes.DATEONLY, allowNull: true },
       membroId: { type: DataTypes.STRING, allowNull: true },
+      // Aportes extraordinários: [{ id, data, valor, tipo: "prazo"|"parcela", parcela }].
+      amortizacoes: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+      // Unidade em que o usuário digitou a taxa ("mensal"|"anual"). "taxa" segue mensal.
+      taxaPeriodo: { type: DataTypes.STRING(8), allowNull: false, defaultValue: "mensal" },
     },
     { tableName: "emprestimos", indexes: [{ fields: ["userId"] }] }
   );

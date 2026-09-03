@@ -26,4 +26,7 @@ router.put("/membros", c.putMembros);
 router.put("/holerites", c.putHolerites);
 router.put("/rendas-extras", c.putRendasExtras);
 
+// Log de importação (métricas + correções) — alimenta a análise do admin.
+router.post("/import-log", c.postImportLog);
+
 module.exports = router;

@@ -49,28 +49,38 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
 
   // ── Holerite ──────────────────────────────────────────────
   function novoHolerite(key) {
-    setEditH({ id: genId(), membroId: key, mesRef: mr, titulo: "", salarioBruto: "", descontos: [{ nome: "INSS", valor: "" }, { nome: "IRPF", valor: "" }], outrosRendimentos: [], recorrente: true, _novo: true });
+    setEditH({ id: genId(), membroId: key, mesRef: mr, titulo: "", salarioBase: "", diasTrabalhados: "30", salarioBruto: "", descontos: [{ nome: "INSS", valor: "" }, { nome: "IRPF", valor: "" }], outrosRendimentos: [], recorrente: true, _novo: true });
   }
   function editarHolerite(h) {
     // Holerite herdado (de um mês anterior): editar num mês posterior cria uma
     // NOVA versão para o mês atual (aumento), preservando o registro de origem.
     const herdado = h.mesRef !== mr;
+    // Compat: holerites antigos (sem salarioBase) tratam o bruto salvo como base cheia.
+    const temBase = h.salarioBase != null && Number(h.salarioBase) > 0;
     setEditH({
       ...h,
       id: herdado ? genId() : h.id,
       mesRef: herdado ? mr : h.mesRef,
       _novo: herdado,
       _origem: herdado ? h.mesRef : null,
+      salarioBase: temBase ? String(h.salarioBase) : (h.salarioBruto ? String(h.salarioBruto) : ""),
+      diasTrabalhados: h.diasTrabalhados ? String(h.diasTrabalhados) : "30",
       salarioBruto: h.salarioBruto ? String(h.salarioBruto) : "",
       descontos: (h.descontos || []).map((d) => ({ nome: d.nome || "", valor: d.valor != null ? String(d.valor) : "" })),
       outrosRendimentos: (h.outrosRendimentos || []).map((d) => ({ nome: d.nome || "", valor: d.valor != null ? String(d.valor) : "" })),
     });
   }
   function salvarHolerite() {
+    const base = n(editH.salarioBase);
+    const dias = Math.min(31, Math.max(1, parseInt(editH.diasTrabalhados) || 30));
+    // Salário do mês (bruto) = proporcional aos dias trabalhados.
+    const salarioMes = base > 0 ? (dias >= 30 ? base : Math.round(base * dias / 30 * 100) / 100) : n(editH.salarioBruto);
     const h = {
       id: editH.id, membroId: editH.membroId || null, mesRef: editH.mesRef || mr,
       titulo: (editH.titulo || "").trim(),
-      salarioBruto: n(editH.salarioBruto),
+      salarioBase: base,
+      diasTrabalhados: dias,
+      salarioBruto: salarioMes,
       descontos: (editH.descontos || []).map((d) => ({ nome: (d.nome || "").trim(), valor: n(d.valor) })).filter((d) => d.nome || d.valor),
       outrosRendimentos: (editH.outrosRendimentos || []).map((d) => ({ nome: (d.nome || "").trim(), valor: n(d.valor) })).filter((d) => d.nome || d.valor),
       recorrente: editH.recorrente !== false,
@@ -88,7 +98,11 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
   }
   function removerExtra(id) { setRendasExtras((rendasExtras || []).filter((x) => x.id !== id)); }
 
-  const liquidoEdit = editH ? n(editH.salarioBruto) - (editH.descontos || []).reduce((s, d) => s + n(d.valor), 0) : 0;
+  // Salário do mês = base × dias/30 (proporcional). Mês cheio (≥30 dias) = base.
+  const baseEdit = editH ? n(editH.salarioBase) : 0;
+  const diasEdit = editH ? Math.min(31, Math.max(1, parseInt(editH.diasTrabalhados) || 30)) : 30;
+  const salarioMesEdit = baseEdit > 0 ? (diasEdit >= 30 ? baseEdit : Math.round(baseEdit * diasEdit / 30 * 100) / 100) : (editH ? n(editH.salarioBruto) : 0);
+  const liquidoEdit = editH ? salarioMesEdit - (editH.descontos || []).reduce((s, d) => s + n(d.valor), 0) : 0;
   const beneficiosEdit = editH ? (editH.outrosRendimentos || []).reduce((s, d) => s + n(d.valor), 0) : 0;
   const rendaEdit = liquidoEdit + beneficiosEdit;
 
@@ -112,8 +126,21 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
           )}
           <Label>Título (ex.: empresa/trabalho)</Label>
           <Inp placeholder="Ex.: CLT — Empresa X" value={editH.titulo} onChange={(e) => setEditH({ ...editH, titulo: e.target.value })} style={{ marginBottom: 10 }} />
-          <Label>Salário bruto</Label>
-          <MoneyInput placeholder="0,00" value={editH.salarioBruto} onChange={(e) => setEditH({ ...editH, salarioBruto: e.target.value })} style={{ marginBottom: 12 }} />
+          <Label>Salário base (mês cheio)</Label>
+          <MoneyInput placeholder="0,00" value={editH.salarioBase} onChange={(e) => setEditH({ ...editH, salarioBase: e.target.value })} style={{ marginBottom: 10 }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
+            <div>
+              <Label>Dias trabalhados</Label>
+              <Inp type="number" min={1} max={31} placeholder="30" value={editH.diasTrabalhados} onChange={(e) => setEditH({ ...editH, diasTrabalhados: e.target.value })} />
+            </div>
+            <div>
+              <Label>Salário do mês</Label>
+              <div style={{ padding: "10px 12px", background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 14, fontWeight: 800, color: C.emerald }}>{fmt(salarioMesEdit)}</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 12, lineHeight: 1.4 }}>
+            {baseEdit > 0 && diasEdit < 30 ? `Proporcional aos dias: ${fmt(baseEdit)} × ${diasEdit}/30 = ${fmt(salarioMesEdit)}. Férias/13º entram em "outros rendimentos".` : "Mês cheio = 30 dias. Reduza em meses de férias, admissão ou rescisão."}
+          </div>
 
           <Label>Descontos</Label>
           {(editH.descontos || []).map((d, i) => (
@@ -137,6 +164,9 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
             <input type="checkbox" checked={editH.recorrente !== false} onChange={(e) => setEditH({ ...editH, recorrente: e.target.checked })} />
             Repetir nos próximos meses (renda fixa recorrente)
           </label>
+          {editH.recorrente === false && (
+            <div style={{ fontSize: 10.5, color: C.muted, marginTop: -4, marginBottom: 12, lineHeight: 1.4 }}>Vale só em {labelMesRef(editH.mesRef || mr)}. Se houver um holerite recorrente com o mesmo título, este <strong style={{ color: C.subtle }}>substitui</strong> ele apenas neste mês (ideal para férias/proporcional).</div>
+          )}
 
           <div style={{ padding: "10px 0", borderTop: `1px solid ${C.border}`, marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -172,7 +202,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: `color-mix(in srgb, ${C.emerald} 10%, transparent)`, color: C.emerald, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Wallet size={15} /></div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.titulo || "Holerite"}{h.recorrente === false ? " (só este mês)" : ""}{h.mesRef !== mr ? <span style={{ fontWeight: 600, color: C.accent }}> · desde {labelMesRef(h.mesRef)}</span> : null}</div>
-                  <div style={{ fontSize: 10, color: C.muted }}>bruto {fmt(Number(h.salarioBruto) || 0)}{totalOutrosRendimentos(h) > 0 ? ` · benefícios ${fmt(totalOutrosRendimentos(h))}` : ""}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{(h.diasTrabalhados && h.diasTrabalhados < 30 && Number(h.salarioBase) > 0) ? `base ${fmt(Number(h.salarioBase))} · ${h.diasTrabalhados} dias · ` : ""}salário {fmt(Number(h.salarioBruto) || 0)}{totalOutrosRendimentos(h) > 0 ? ` · benefícios ${fmt(totalOutrosRendimentos(h))}` : ""}</div>
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 800, color: C.emerald, flexShrink: 0 }}>{fmt(rendaHolerite(h))}</span>
                 <button onClick={() => editarHolerite(h)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Pencil size={14} /></button>

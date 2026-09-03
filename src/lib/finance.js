@@ -14,6 +14,11 @@ export function normSistema(s) {
 
 const toRate = (taxaMensal) => (taxaMensal || 0) / 100;
 
+// ─── Conversão de taxa efetiva mensal ⇄ anual ────────────────
+// Efetiva composta: (1 + i)^12 = (1 + ia). Ex.: 1% a.m. ≈ 12,68% a.a.
+export const taxaMensalParaAnual = (m) => (Math.pow(1 + (m || 0) / 100, 12) - 1) * 100;
+export const taxaAnualParaMensal = (a) => (Math.pow(1 + (a || 0) / 100, 1 / 12) - 1) * 100;
+
 // ─── PRICE (prestação constante) ─────────────────────────────
 export function calcPMT(pv, taxaMensal, n) {
   if (!pv || !n) return 0;
@@ -95,6 +100,95 @@ export function resumoEmprestimo(sistema, pv, taxaMensal, n) {
   const pmt = calcPMT(pv, taxaMensal, n);
   const totalPago = pmt * n;
   return { parcelaInicial: pmt, parcelaFinal: pmt, totalPago, totalJuros: totalPago - pv, custoTotal: totalPago / pv - 1 };
+}
+
+// ─── Amortização com aportes extraordinários ─────────────────
+// Simula o contrato mês a mês. `extras` são aportes extraordinários pagos JUNTO
+// da parcela `parcela`:  { parcela, valor, tipo }.
+//   tipo "prazo"   → mantém a prestação e encurta o prazo (menos parcelas).
+//   tipo "parcela" → mantém o prazo e reduz a prestação (recalcula a partir do saldo).
+// Retorna as linhas do fluxo: { k, pmt(prestação), juros, amort, extra, saldo }.
+export function amortize(sistema, pv, taxaMensal, n, extras = []) {
+  const rows = [];
+  if (!pv || !n) return rows;
+  const sac = normSistema(sistema) === "SAC";
+  const i = toRate(taxaMensal);
+
+  const byParcela = {};
+  for (const e of extras || []) {
+    const k = Math.max(1, Math.trunc(Number(e.parcela) || 0));
+    const val = Math.max(0, Number(e.valor) || 0);
+    if (!val) continue;
+    (byParcela[k] = byParcela[k] || []).push({ valor: val, tipo: e.tipo === "parcela" ? "parcela" : "prazo" });
+  }
+
+  let saldo = pv;
+  let nAlvo = n;                                  // parcela final alvo (muda ao reduzir prazo)
+  let pmt = sac ? 0 : calcPMT(pv, taxaMensal, n); // prestação Price
+  let amortFixa = sac ? pv / n : 0;               // amortização SAC
+
+  // Meses p/ quitar `sld` mantendo a prestação/amortização atual.
+  const projetaMeses = (sld) => {
+    if (sld <= 0.005) return 0;
+    if (sac) return Math.max(1, Math.ceil(sld / amortFixa - 1e-9));
+    if (i === 0) return Math.max(1, Math.ceil(sld / pmt - 1e-9));
+    const ratio = 1 - (sld * i) / pmt;
+    if (ratio <= 0) return 999; // prestação não cobre os juros
+    return Math.max(1, Math.ceil(-Math.log(ratio) / Math.log(1 + i) - 1e-9));
+  };
+
+  let k = 0;
+  while (saldo > 0.005 && k < 1200) {
+    k++;
+    const juros = i === 0 ? 0 : saldo * i;
+    let amort = sac ? Math.min(amortFixa, saldo) : Math.min(pmt - juros, saldo);
+    if (amort < 0) amort = 0;
+    if (saldo - amort < 0.005) amort = saldo; // fecha o resíduo na última
+    const prest = juros + amort;
+    saldo = Math.max(0, saldo - amort);
+
+    let extra = 0;
+    const exs = byParcela[k];
+    if (exs && saldo > 0.005) {
+      let tipoUlt = "prazo";
+      for (const e of exs) {
+        const val = Math.min(e.valor, saldo);
+        saldo = Math.max(0, saldo - val);
+        extra += val;
+        tipoUlt = e.tipo;
+      }
+      if (saldo > 0.005) {
+        if (tipoUlt === "parcela") {
+          const rem = Math.max(1, nAlvo - k);          // mantém o prazo → recalcula prestação
+          pmt = sac ? 0 : calcPMT(saldo, taxaMensal, rem);
+          amortFixa = sac ? saldo / rem : 0;
+        } else {
+          nAlvo = k + projetaMeses(saldo);             // reduz prazo → mantém prestação
+        }
+      }
+    }
+    rows.push({ k, pmt: prest, juros, amort, extra, saldo });
+    if (saldo <= 0.005) break;
+  }
+  return rows;
+}
+
+// Linhas do fluxo de um empréstimo (com seus aportes extraordinários).
+export function emprestimoRows(emp) {
+  return amortize(emp.sistema, emp.valorContratado, emp.taxa, emp.parcelas, emp.amortizacoes || []);
+}
+
+// Estado atual após `pago` parcelas: saldo, próxima prestação, restantes, prazo final,
+// e totais do contrato inteiro (já considerando os aportes).
+export function emprestimoEstado(emp, pago) {
+  const rows = emprestimoRows(emp);
+  const pv = Number(emp.valorContratado) || 0;
+  const p = Math.min(rows.length, Math.max(0, pago || 0));
+  const saldo = p <= 0 ? pv : rows[p - 1].saldo;
+  const proxima = p < rows.length ? rows[p].pmt : 0;
+  const totalPago = rows.reduce((s, r) => s + r.pmt + r.extra, 0);
+  const totalJuros = rows.reduce((s, r) => s + r.juros, 0);
+  return { rows, saldo, proxima, restantes: Math.max(0, rows.length - p), nFinal: rows.length, totalPago, totalJuros };
 }
 
 export function calcParcelasPagas(dataPrimeira, n) {

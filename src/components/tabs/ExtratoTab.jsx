@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState } from "react";
 import { C, todayStr, fmt, catById } from "../../lib/constants";
-import { Card, Field, Inp, Btn, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
+import { Card, Field, Inp, Sel, Btn, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, CreditCard, Pencil, Trash2, RefreshCw, Save } from "../../lib/icons.jsx";
 import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
 import { MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
@@ -10,6 +10,18 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false });
   const [filtroMembro, setFiltroMembro] = useState("todos");
+  const [ordem, setOrdem] = useState("data-desc");
+
+  // Ordena os lançamentos conforme a opção escolhida (data recentes/antigas, valor).
+  function ordenar(arr) {
+    const a = [...arr];
+    switch (ordem) {
+      case "data-asc": return a.sort((x, y) => new Date(x.data) - new Date(y.data));
+      case "valor-desc": return a.sort((x, y) => y.valor - x.valor);
+      case "valor-asc": return a.sort((x, y) => x.valor - y.valor);
+      default: return a.sort((x, y) => new Date(y.data) - new Date(x.data)); // data-desc
+    }
+  }
 
   function startEdit(d) { setForm({ descricao: d.descricao, valor: String(d.valor), categoria: d.categoria, data: d.data, fixo: d.fixo || false }); setEditId(d.id); }
   function saveEdit() {
@@ -66,6 +78,10 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
               <Field label="Valor"><MoneyInput value={form.valor} onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} /></Field>
               <Field label="Data"><Inp type="date" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!form.fixo} onChange={(e) => setForm((p) => ({ ...p, fixo: e.target.checked }))} />
+              <span style={{ fontSize: 12, color: C.subtle }}>Despesa fixa / recorrente</span>
+            </label>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={saveEdit}><IcoTxt Icon={Save}>Salvar</IcoTxt></Btn>
               <Btn variant="ghost" onClick={() => setEditId(null)}>Cancelar</Btn>
@@ -74,7 +90,19 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
         </Card>
       )}
 
-      {[...despesasFiltradas].sort((a, b) => new Date(b.data) - new Date(a.data)).map((d) => {
+      {despesasFiltradas.length > 1 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 10, padding: "0 2px" }}>
+          <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>Ordenar por</span>
+          <Sel value={ordem} onChange={(e) => setOrdem(e.target.value)} style={{ width: "auto", fontSize: 12, padding: "7px 10px" }}>
+            <option value="data-desc">Data (mais recentes)</option>
+            <option value="data-asc">Data (mais antigas)</option>
+            <option value="valor-desc">Maior valor</option>
+            <option value="valor-asc">Menor valor</option>
+          </Sel>
+        </div>
+      )}
+
+      {ordenar(despesasFiltradas).map((d) => {
         const cat = catById(d.categoria);
         return (
           <div key={d.id} style={{ background: C.surface, borderRadius: 13, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, border: `1px solid ${C.border}` }}>

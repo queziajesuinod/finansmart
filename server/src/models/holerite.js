@@ -11,7 +11,9 @@ module.exports = (sequelize, DataTypes) => {
       membroId: { type: DataTypes.STRING, allowNull: true }, // null = principal
       mesRef: { type: DataTypes.STRING, allowNull: false }, // "YYYY-MM" (MM 01-12)
       titulo: { type: DataTypes.STRING, allowNull: true }, // ex.: nome do trabalho/empresa
-      salarioBruto: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+      salarioBruto: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 }, // salário DO MÊS (já proporcional aos dias)
+      salarioBase: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 }, // salário do MÊS CHEIO (referência)
+      diasTrabalhados: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 30 }, // dias trabalhados (30 = mês cheio)
       // Listas [{ nome, valor }] — flexíveis (INSS, IRPF, plano de saúde, VR, VA...).
       descontos: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
       outrosRendimentos: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },

@@ -34,6 +34,10 @@ if (enabled) {
           }
           // 3) senão, cria uma conta nova (sem senha) + membro principal + assinatura padrão.
           if (!user) {
+            // Cadastro público fechado (lançamento por convite): não cria conta nova.
+            // Usuários já existentes (passos 1/2) continuam logando normalmente.
+            const { getSetting } = require("../services/settings");
+            if ((await getSetting("cadastroPublico", true)) === false) return done(null, false, { message: "signup_closed" });
             user = await User.create({ nome, email, googleId, senhaHash: null });
             await Membro.create({ id: crypto.randomUUID(), userId: user.id, nome: user.nome, tipo: "principal", ordem: 0, ativo: true });
             await ensureDefaultSubscription(user.id);

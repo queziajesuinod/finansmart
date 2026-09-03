@@ -1,15 +1,16 @@
 // @ts-nocheck
 import { useState, useRef, useEffect } from "react";
-import { C, CATEGORIES, todayStr, fmt, genId, tint } from "../../lib/constants";
+import { C, CATEGORIES, todayStr, fmt, genId, tint, addMonths } from "../../lib/constants";
 import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
-import { parseFatura, aplicarRegras, merchantKey } from "../../lib/parseFatura";
-import { authConfig, aiImportFatura, getPlans } from "../../lib/api";
+import { parseFatura, aplicarRegras, merchantKey, autoCategoria } from "../../lib/parseFatura";
+import { authConfig, aiImportFatura, getPlans, saveImportLog } from "../../lib/api";
 import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight } from "../../lib/icons.jsx";
 import { membrosOrdenados, principalId, principalDe } from "../Membros.jsx";
 
-export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, setCartoes, parcelados, setParcelados, categoryRules, setCategoryRules, cardProfiles, setTab, membros = [], setMembros, temAssistente = false, access = null }) {
+export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, setCartoes, parcelados, setParcelados, categoryRules, setCategoryRules, globalCategoryRules = {}, cardProfiles, setTab, membros = [], setMembros, temAssistente = false, access = null }) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  const [fonteImport, setFonteImport] = useState("local"); // "local" | "ia" — p/ o log de importação
   const [items, setItems] = useState([]);
   const [modo, setModo] = useState("pdf");
   const [texto, setTexto] = useState("");
@@ -133,8 +134,9 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   // Prioriza a data de VENCIMENTO; senão o mês mais frequente das transações.
   function detectarMesRef(txt, itens) {
     const t = (txt || "").replace(/\s+/g, " ");
-    // vencimento dd/mm/aaaa (CAIXA)
-    let m = t.match(/vencimento[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/i);
+    // vencimento dd/mm/aaaa (CAIXA/Bradesco). Tolera um valor entre o rótulo e a
+    // data (ex.: "Vencimento R$ 3.150,16 10/09/2026") — pega a 1ª data após o rótulo.
+    let m = t.match(/vencimento\b[\s\S]{0,60}?(\d{2})\/(\d{2})\/(\d{4})/i);
     if (m) return `${m[3]}-${m[2]}`;
     // vencimento dd MMM aaaa (Nubank: "08 JUL 2026")
     const MES = { jan: "01", fev: "02", mar: "03", abr: "04", mai: "05", jun: "06", jul: "07", ago: "08", set: "09", out: "10", nov: "11", dez: "12" };
@@ -197,16 +199,20 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   // Dia do vencimento (só o dia; ex: "Vencimento: 25/06/2026" → 25).
   function detectarVencDia(txt) {
     const t = txt || "";
-    let m = t.match(/vencimento[^0-9]{0,20}(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
+    let m = t.match(/vencimento\b[\s\S]{0,60}?(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
     if (m) return parseInt(m[1], 10);
     m = t.match(/vencimento[^0-9a-z]{0,20}(\d{1,2})\s+[a-z]{3}/i); // "08 JUL 2026" (Nubank)
     if (m) return parseInt(m[1], 10);
     return null;
   }
-  // Limite total de crédito impresso na fatura.
+  // Limite total de crédito impresso na fatura. Cuidado com layouts (Nubank) que
+  // têm uma tabela "Limite total | Utilizado | Disponível" — o genérico pegava o
+  // UTILIZADO por engano. Por isso tentamos primeiro as frases explícitas do
+  // cabeçalho ("limite total DO CARTÃO de crédito") e só caímos no genérico depois.
   function detectarLimite(txt) {
     const t = (txt || "").replace(/\s+/g, " ");
-    const m = t.match(/limite total de cr[eé]dito[^0-9]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})/i) ||
+    const m = t.match(/limite total do cart[ãa]o de cr[eé]dito[^0-9]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})/i) ||
+              t.match(/limite total de cr[eé]dito[^0-9]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})/i) ||
               t.match(/limite total[^0-9]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})/i);
     if (m) return parseFloat(m[1].replace(/\./g, "").replace(",", "."));
     return null;
@@ -219,9 +225,10 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   const setVencDia = (e) => { const d = parseInt(e.target.value, 10); setMeta((m) => ({ ...m, vencimento: d >= 1 && d <= 31 ? vencDoDia(d) : "" })); };
 
   function mostrarResultado(parsed, txtCompleto, fonte = "local") {
+    setFonteImport(fonte === "ia" ? "ia" : "local");
     const totalOficial = parsed.totalOficial || acharTotalFatura(txtCompleto || "");
-    // Aplica as categorias que o usuário já ensinou em importações anteriores.
-    const comRegras = aplicarRegras(parsed, categoryRules);
+    // Aplica as regras GLOBAIS (admin) e depois as PESSOAIS (têm prioridade).
+    const comRegras = aplicarRegras(parsed, { ...(globalCategoryRules || {}), ...(categoryRules || {}) });
     setItems(comRegras);
     // Pagamentos: só o parser local os detecta (a IA cuida só das compras).
     // Preserva os já detectados quando a leitura vem da IA (parsed sem a lista).
@@ -430,8 +437,16 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     const pags = pagsRaw.filter((p) => !jaPagas.has(sig(p)));
 
     const somaCompras = compras.reduce((s, c) => s + c.valor, 0);
-    // Se houve dedup, o total oficial não vale mais; usa a soma das compras novas.
-    const total = duplicadas > 0 ? somaCompras : ((totalFatura && totalFatura >= somaCompras - 0.01) ? totalFatura : somaCompras);
+    // Total da fatura = o "Total a pagar" impresso (headline) quando detectado.
+    // Ele pode ser MENOR que a soma dos lançamentos quando houve pagamentos no
+    // período (ex.: Nubank com "Pagamento recebido") — regime de caixa: a fatura
+    // vale o total a pagar, não a soma bruta. Por isso, se há pagamentos, confiamos
+    // no impresso mesmo sendo menor. Sem total impresso, ou em reimportação com
+    // dedup (o impresso não corresponde ao subconjunto de compras novas), usa a soma.
+    const temPagamentos = pags.length > 0;
+    const total = duplicadas > 0
+      ? somaCompras
+      : (totalFatura && (totalFatura >= somaCompras - 0.01 || temPagamentos) ? totalFatura : somaCompras);
     const portadores = [...new Set(compras.map((c) => c.portador))];
     // Mês de referência: da fatura (meta.mesRef "YYYY-MM"), NÃO o mês visível na tela.
     const mesRef = meta.mesRef
@@ -465,10 +480,17 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     (parcelados || []).forEach((p) => parcKeys(p).forEach((k) => existentes.add(k)));
     const novasParcelas = [];
     let ignoradas = 0;
+    // 1ª parcela ancorada no MÊS DA FATURA (mesRef), não na data impressa: a parcela
+    // `parcelaAtual` cai NESTA fatura, então a 1ª foi (parcelaAtual−1) meses antes.
+    // Vale pra QUALQUER banco — Bradesco imprime a data da compra original, Nubank a
+    // da parcela atual, mas o nº da parcela é sempre relativo à fatura. Assim a última
+    // parcela e o "encerrando" saem certos (ex.: Pichau 10/12 em set → termina em nov).
+    const [refAnoP, refMes0] = mesRef.split("-").map((x) => parseInt(x, 10));
     compras.filter((c) => c.parcelas > 1 && c.valor > 0).forEach((c) => {
-      const dataNaFatura = new Date(c.data + "T12:00:00");
-      const dataPrimeira = new Date(dataNaFatura);
-      dataPrimeira.setMonth(dataPrimeira.getMonth() - (c.parcelaAtual - 1));
+      const diaCompra = parseInt(String(c.data).slice(8, 10), 10) || 1;
+      const ancora = new Date(refAnoP, refMes0, Math.min(diaCompra, 28), 12, 0, 0);
+      // addMonths recua com aritmética de mês segura (sem overflow de dia).
+      const dataPrimeira = addMonths(ancora, -(c.parcelaAtual - 1));
       const nova = {
         id: genId(),
         descricao: c.descricao.replace(/\s*\d{1,2}\/\d{1,2}\s*/g, " ").trim() || c.descricao,
@@ -505,6 +527,22 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
       }
       setCategoryRules(novasRegras);
     }
+
+    // ── Log da importação (análise do admin): o que o parser deu vs. o confirmado,
+    //    e quais categorias divergem do autoCategoria (viram candidatas a regra). ──
+    const correcoesMap = {};
+    for (const c of compras) {
+      const auto = autoCategoria(c.descricao);
+      if (c.categoria && c.categoria !== auto) { const k = merchantKey(c.descricao); if (k) correcoesMap[k] = { chave: k, de: auto, para: c.categoria }; }
+    }
+    saveImportLog({
+      banco: cartao.banco, mesRef: meta.mesRef || cartao.mesRef, fonte: fonteImport,
+      itensParsed: todas.length, itensConfirmados: compras.length, itensRemovidos: duplicadas,
+      parcelas: novasParcelas.length, categoriasCorrigidas: Object.keys(correcoesMap).length,
+      totalDetectado: totalFatura, totalUsado: total,
+      limiteDetectado: parseFloat((meta.limite || "").replace(",", ".")) || null,
+      teveEstorno: compras.some((c) => c.valor < 0), correcoes: Object.values(correcoesMap),
+    }).catch(() => { /* best-effort: nunca trava a importação */ });
 
     setItems([]); setTexto(""); setMeta({ banco: "", nome: "", limite: "", vencimento: "", mesRef: "" }); setTotalFatura(null); setPagamentos([]); setMapMembro({}); setSepararPorMembro(false); setConfirmarPreco(false);
     const dupTxt = duplicadas > 0 ? ` ${duplicadas} compra${duplicadas > 1 ? "s" : ""} duplicada${duplicadas > 1 ? "s" : ""} (mesma data e valor) ignorada${duplicadas > 1 ? "s" : ""}.` : "";

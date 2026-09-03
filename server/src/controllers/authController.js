@@ -3,6 +3,7 @@ const { User, Membro } = require("../models");
 const { hashPassword, verifyPassword } = require("../utils/password");
 const { signToken } = require("../utils/jwt");
 const { getAccessState, ensureDefaultSubscription } = require("../services/access");
+const { getSetting } = require("../services/settings");
 
 function tokenFor(user) {
   return signToken({ sub: user.id, role: user.role });
@@ -14,6 +15,10 @@ async function register(req, res, next) {
     const { nome, email, senha, cpf, telefone, dependentes } = req.body || {};
     const emailNorm = (email || "").trim().toLowerCase();
 
+    // Cadastro público pode estar fechado (lançamento por convite) — config do admin.
+    if ((await getSetting("cadastroPublico", true)) === false) {
+      return res.status(403).json({ error: "O cadastro está fechado no momento.", code: "signup_closed" });
+    }
     if (!nome?.trim() || !emailNorm || !senha) {
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios.", code: "missing_fields" });
     }

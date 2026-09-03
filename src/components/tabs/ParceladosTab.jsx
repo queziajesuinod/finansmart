@@ -1,12 +1,15 @@
 // @ts-nocheck
 import { useState, useRef, useEffect } from "react";
-import { C, CATEGORIES, todayStr, fmt, genId, catById } from "../../lib/constants";
+import { C, CATEGORIES, todayStr, fmt, genId, catById, tint, addMonths, monthDiff } from "../../lib/constants";
 import { Card, Label, Field, Inp, Sel, Btn, Badge, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, Pencil, Trash2, Save, Check, ShoppingBag, Flag, Siren } from "../../lib/icons.jsx";
 import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
-export default function ParceladosTab({ parcelados, setParcelados, year, monthIdx, membros = [] }) {
-  const EMPTY = { descricao: "", valorTotal: "", totalParcelas: "", parcelaAtual: "1", dataCompra: todayStr(), categoria: "outros", membroId: null };
+export default function ParceladosTab({ parcelados, setParcelados, year, monthIdx, membros = [], cartoesDisponiveis = [] }) {
+  const EMPTY = { descricao: "", valorTotal: "", totalParcelas: "", parcelaAtual: "1", dataCompra: todayStr(), categoria: "outros", membroId: null, origem: "" };
+  // Cartões oferecidos no seletor (dedup por nome). Com cartão → abate o limite
+  // daquele cartão; sem cartão → carnê/boleto, entra só na despesa.
+  const cartoesOpts = [...new Map((cartoesDisponiveis || []).filter((c) => c && c.nome).map((c) => [c.nome, c])).values()];
   const [form, setForm] = useState(EMPTY);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -24,19 +27,19 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
   const pAtual = parseInt(form.parcelaAtual) || 1;
   const valorParcela = n > 0 ? valorTotal / n : 0;
 
+  // Mês final = mês da compra + (totalParcelas − 1), com aritmética de mês segura
+  // (addMonths evita o overflow de dia do JS que estourava o mês em compras dia 29-31).
   function getStatus(p) {
-    const inicio = new Date(p.dataCompra + "T12:00:00");
-    const fimMes = new Date(inicio); fimMes.setMonth(fimMes.getMonth() + p.totalParcelas - 1);
-    const hoje = new Date(year, monthIdx, 1);
-    if (fimMes < hoje) return { label: "Quitado", color: C.emerald };
-    const mesAtualCompra = Math.floor((new Date(year, monthIdx, 1) - inicio) / (1000 * 60 * 60 * 24 * 30)) + 1;
-    const parcRestante = Math.max(0, p.totalParcelas - mesAtualCompra + 1);
+    const fimMes = addMonths(p.dataCompra, p.totalParcelas - 1);
+    const ref = new Date(year, monthIdx, 1);
+    if (fimMes < ref) return { label: "Quitado", color: C.emerald };
+    const parcRestante = Math.max(0, p.totalParcelas - getParcelaAtualNum(p) + 1);
     return { label: `${parcRestante} restante${parcRestante !== 1 ? "s" : ""}`, color: C.cyan };
   }
   function getParcelaAtualNum(p) {
-    const inicio = new Date(p.dataCompra + "T12:00:00");
-    const diff = Math.floor((new Date(year, monthIdx, 1) - inicio) / (1000 * 60 * 60 * 24 * 30)) + 1;
-    return Math.min(p.totalParcelas, Math.max(1, diff));
+    // Diferença exata em meses de calendário (sem aproximação de 30 dias, que drifta).
+    const parcela = monthDiff(p.dataCompra, new Date(year, monthIdx, 1)) + 1;
+    return Math.min(p.totalParcelas, Math.max(1, parcela));
   }
 
   function submit() {
@@ -48,9 +51,20 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
   }
   function startEdit(p) { setForm({ ...p, valorTotal: String(p.valorTotal), totalParcelas: String(p.totalParcelas), parcelaAtual: String(p.parcelaAtual) }); setEditId(p.id); setShowForm(true); }
 
+  // Baixa manual por parcela: alterna a parcela nº `parcela` entre paga/não paga.
+  // É só status/histórico — a parcela conta como despesa pela data, independente disto.
+  function toggleParcelaPaga(p, parcela) {
+    setParcelados(parcelados.map((x) => {
+      if (x.id !== p.id) return x;
+      const atuais = Array.isArray(x.pagas) ? x.pagas : [];
+      const nova = atuais.includes(parcela) ? atuais.filter((k) => k !== parcela) : [...atuais, parcela].sort((a, b) => a - b);
+      return { ...x, pagas: nova };
+    }));
+  }
+
   const noMembro = (p) => pertenceAoMembro(p, filtroMembro, membros);
-  const ativas = parcelados.filter((p) => { const ini = new Date(p.dataCompra + "T12:00:00"); const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1); return fim >= new Date(year, monthIdx, 1); }).filter(noMembro);
-  const quitadas = parcelados.filter((p) => { const ini = new Date(p.dataCompra + "T12:00:00"); const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1); return fim < new Date(year, monthIdx, 1); }).filter(noMembro);
+  const ativas = parcelados.filter((p) => addMonths(p.dataCompra, p.totalParcelas - 1) >= new Date(year, monthIdx, 1)).filter(noMembro);
+  const quitadas = parcelados.filter((p) => addMonths(p.dataCompra, p.totalParcelas - 1) < new Date(year, monthIdx, 1)).filter(noMembro);
   const totalMes = ativas.reduce((s, p) => s + p.valorParcela, 0);
   const temMembros = membrosOrdenados(membros).length > 1;
 
@@ -65,7 +79,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 11, color: C.muted }}>{ativas.length} compra{ativas.length !== 1 ? "s" : ""} ativa{ativas.length !== 1 ? "s" : ""}</div>
-              {parcelados.filter((p) => { const ini = new Date(p.dataCompra + "T12:00:00"); const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1); return fim.getFullYear() === year && fim.getMonth() === monthIdx; }).length > 0 && (
+              {parcelados.filter((p) => { const fim = addMonths(p.dataCompra, p.totalParcelas - 1); return fim.getFullYear() === year && fim.getMonth() === monthIdx; }).length > 0 && (
                 <Badge label="parcelas encerrando este mês" color={C.amber} Icon={Siren} />
               )}
             </div>
@@ -92,6 +106,14 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
               <Sel value={form.categoria} onChange={f("categoria")}>
                 {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
               </Sel>
+            </Field>
+            <Field label="Cartão" span={2}>
+              <Sel value={form.origem || ""} onChange={f("origem")}>
+                <option value="">Sem cartão (carnê / boleto)</option>
+                {form.origem && !cartoesOpts.some((c) => c.nome === form.origem) && <option value={form.origem}>{form.origem}</option>}
+                {cartoesOpts.map((c) => <option key={c.nome} value={c.nome}>{c.nome}{c.banco ? ` · ${c.banco}` : ""}</option>)}
+              </Sel>
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 5, lineHeight: 1.4 }}>Com cartão, a compra abate o limite dele. Sem cartão, entra só nas despesas do mês.</div>
             </Field>
           </div>
           <MembroSelect membros={membros} value={form.membroId} onChange={(v) => setForm((p) => ({ ...p, membroId: v }))} label="De quem é esta compra?" style={{ marginBottom: 12 }} />
@@ -124,9 +146,10 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
         const cat = catById(p.categoria);
         const st = getStatus(p);
         const curParcela = getParcelaAtualNum(p);
+        const pagas = Array.isArray(p.pagas) ? p.pagas : [];
+        const curPaga = pagas.includes(curParcela);
         const pct = p.totalParcelas > 0 ? (curParcela / p.totalParcelas) * 100 : 0;
-        const ini = new Date(p.dataCompra + "T12:00:00");
-        const fim = new Date(ini); fim.setMonth(fim.getMonth() + p.totalParcelas - 1);
+        const fim = addMonths(p.dataCompra, p.totalParcelas - 1);
         const encerrando = fim.getFullYear() === year && fim.getMonth() === monthIdx;
         return (
           <Card key={p.id} style={{ marginBottom: 10, border: encerrando ? `1px solid rgba(245,158,11,0.35)` : undefined }}>
@@ -161,6 +184,13 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
               <Bar pct={pct} color={encerrando ? C.amber : C.cyan} h={6} />
             </div>
             {encerrando && <div style={{ fontSize: 11, color: C.amber, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><Flag size={12} /> Última parcela este mês!</div>}
+            {/* Baixa manual da parcela do mês vigente (carnê/boleto ou controle próprio). */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap", borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+              <span style={{ fontSize: 11, color: C.muted }}>Parcelas pagas: <b style={{ color: C.emerald }}>{pagas.length}</b> de {p.totalParcelas}</span>
+              <button onClick={() => toggleParcelaPaga(p, curParcela)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: `1px solid ${curPaga ? tint(C.emerald, 45) : C.border}`, background: curPaga ? tint(C.emerald, 12) : "transparent", color: curPaga ? C.emerald : C.subtle }}>
+                {curPaga ? <><Check size={13} /> Parcela {curParcela} paga</> : `Marcar parcela ${curParcela} paga`}
+              </button>
+            </div>
           </Card>
         );
       })}

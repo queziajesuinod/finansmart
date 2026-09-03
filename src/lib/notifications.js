@@ -94,7 +94,7 @@ export function gerarNotificacoes(ctx) {
   // 6) Parcelas encerrando este mês.
   if ((parcelVencendoMes || []).length) {
     const n = parcelVencendoMes.length;
-    add({ id: `parc-encerra-${periodo}`, severidade: "info", tab: "parcelados",
+    add({ id: `parc-encerra-${periodo}`, severidade: "info", tab: "cartoes",
       titulo: `${n} parcelamento${n > 1 ? "s" : ""} encerrando`, msg: `${n} compra${n > 1 ? "s" : ""} parcelada${n > 1 ? "s" : ""} chega${n > 1 ? "m" : ""} à última parcela em ${mesNome} — em breve sobra mais no orçamento.` });
   }
 

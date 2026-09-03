@@ -4,6 +4,7 @@ const authController = require("../controllers/authController");
 const requireAuth = require("../middleware/auth");
 const { authLimiter } = require("../middleware/rateLimit");
 const { aiEnabled } = require("../services/aiImport");
+const { getSetting } = require("../services/settings");
 
 const router = Router();
 
@@ -22,8 +23,13 @@ if (googleEnabled) {
   router.get("/google", (req, res) => res.status(503).json({ error: "Login com Google não configurado.", code: "google_disabled" }));
 }
 
-// Endpoint para o frontend saber quais recursos estão disponíveis.
-router.get("/config", (req, res) => res.json({ googleEnabled, aiImport: aiEnabled() }));
+// Endpoint para o frontend saber quais recursos estão disponíveis. A leitura de
+// fatura com IA pode ser desligada pelo admin (app_settings.iaImportAtiva).
+router.get("/config", async (req, res) => {
+  const iaAtiva = (await getSetting("iaImportAtiva", true)) !== false;
+  const cadastroPublico = (await getSetting("cadastroPublico", true)) !== false;
+  res.json({ googleEnabled, aiImport: aiEnabled() && iaAtiva, cadastroPublico });
+});
 
 // Dados do usuário logado.
 router.get("/me", requireAuth, authController.me);

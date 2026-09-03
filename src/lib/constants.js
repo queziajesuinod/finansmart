@@ -65,6 +65,27 @@ export function daysInMonth(y, m) {
   return new Date(y, m + 1, 0).getDate();
 }
 
+// Soma `months` a uma data SEM o bug de overflow de dia do JS (ex.: 31/jan + 1 mês
+// viraria 03/mar porque fev não tem 31). Preserva o dia quando possível; senão
+// prende no último dia do mês de destino. Aceita Date ou "YYYY-MM-DD".
+export function addMonths(input, months) {
+  const d = input instanceof Date ? new Date(input.getTime()) : new Date(`${String(input).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return d;
+  const dia = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(dia, ultimoDia));
+  return d;
+}
+
+// Diferença em meses de calendário entre duas datas (to − from). Aceita Date ou "YYYY-MM-DD".
+export function monthDiff(from, to) {
+  const a = from instanceof Date ? from : new Date(`${String(from).slice(0, 10)}T12:00:00`);
+  const b = to instanceof Date ? to : new Date(`${String(to).slice(0, 10)}T12:00:00`);
+  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+
 export function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
@@ -135,7 +156,12 @@ export function holeritesVigentes(holerites, year, monthIdx) {
     const atual = recorrentes[chave];
     if (!atual || idx > idxDeMesRef(atual.mesRef)) recorrentes[chave] = h;
   }
-  return [...Object.values(recorrentes), ...pontuais];
+  // Um holerite "só este mês" (pontual) SUBSTITUI o recorrente de mesmo título+membro
+  // naquele mês (ex.: mês de férias/proporcional), em vez de somar por cima.
+  const chaveDe = (h) => `${h.membroId || ""}|${String(h.titulo || "").toLowerCase().trim()}`;
+  const chavesPontuais = new Set(pontuais.map(chaveDe));
+  const recVigentes = Object.values(recorrentes).filter((h) => !chavesPontuais.has(chaveDe(h)));
+  return [...recVigentes, ...pontuais];
 }
 
 // Rendas extras vigentes num mês: as pontuais valem só no próprio mês; as

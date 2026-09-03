@@ -1,16 +1,26 @@
 // Centraliza o cálculo de "o usuário está liberado?" e "quais módulos ele acessa".
 const { Subscription, Plan, Module, Membro } = require("../models");
+const { getSetting } = require("./settings");
 
 // Plano que todo usuário novo recebe ao se cadastrar. Trocável via env.
 const DEFAULT_PLAN_SLUG = process.env.DEFAULT_PLAN_SLUG || "completo";
 
 // Garante que o usuário tenha uma assinatura ativa no plano padrão.
 // Idempotente: não faz nada se já existir uma assinatura ativa/trial.
+// O plano padrão é configurável pelo admin (app_settings) e cai no env/"completo".
 async function ensureDefaultSubscription(userId) {
   const jaTem = await Subscription.findOne({ where: { userId, status: ["active", "trialing"] } });
   if (jaTem) return jaTem;
-  const plan = await Plan.findOne({ where: { slug: DEFAULT_PLAN_SLUG } });
+  const slug = (await getSetting("planoPadrao")) || DEFAULT_PLAN_SLUG;
+  const plan = (await Plan.findOne({ where: { slug } })) || (await Plan.findOne({ where: { slug: DEFAULT_PLAN_SLUG } }));
   if (!plan) return null; // banco sem o plano padrão → segue sem assinatura (cai no fail-open).
+  // Trial configurável: >0 dias → "trialing" com vencimento; senão "active" sem prazo.
+  const trialDias = Math.max(0, parseInt(await getSetting("trialDias", 0), 10) || 0);
+  if (trialDias > 0) {
+    const fim = new Date();
+    fim.setDate(fim.getDate() + trialDias);
+    return Subscription.create({ userId, planId: plan.id, status: "trialing", currentPeriodEnd: fim });
+  }
   return Subscription.create({ userId, planId: plan.id, status: "active", currentPeriodEnd: null });
 }
 
@@ -35,7 +45,11 @@ async function getVigenteSubscription(userId) {
 
 // Billing (pagamento) pode ficar desligado durante os testes: BILLING_ENABLED=false
 // libera todo mundo sem cobrança. Ligue BILLING_ENABLED=true para exigir assinatura paga.
-const billingEnabled = () => process.env.BILLING_ENABLED === "true";
+// Cobrança configurável pelo admin (app_settings.cobrancaAtiva). Sem config, cai no env.
+async function billingEnabled() {
+  const v = await getSetting("cobrancaAtiva", null);
+  return v == null ? process.env.BILLING_ENABLED === "true" : v === true;
+}
 
 async function todosModulos() {
   const modulos = await Module.findAll({ order: [["ordem", "ASC"]] });
@@ -47,7 +61,7 @@ async function todosModulos() {
 //   - liberado  → passou no gate de PAGAMENTO (402 quando false)
 //   - modulos   → PERMISSÃO por módulo (403 quando a rota pede um módulo de fora)
 async function getAccessState(user) {
-  const billing = billingEnabled();
+  const billing = await billingEnabled();
 
   // Admin: sempre liberado e com todos os módulos.
   if (user.role === "admin") {

@@ -16,6 +16,9 @@ module.exports = (sequelize, DataTypes) => {
       // Referência opcional ao cartão de onde a compra veio (importação).
       cartaoId: { type: DataTypes.UUID, allowNull: true },
       membroId: { type: DataTypes.STRING, allowNull: true },
+      // Parcelas marcadas como pagas manualmente (nºs de parcela). Só status/histórico —
+      // a parcela conta como despesa pela data, independente disto.
+      pagas: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     },
     { tableName: "parcelados", indexes: [{ fields: ["userId"] }] }
   );

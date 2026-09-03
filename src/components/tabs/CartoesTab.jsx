@@ -1,17 +1,21 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
-import { C, CATEGORIES, MONTH_NAMES, fmt, fmtPct, catById, genId, tint } from "../../lib/constants";
-import { Card, Label, Field, Inp, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
-import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ChartColumn, Users, Save, Pencil, X, FilePlus, Undo2 } from "../../lib/icons.jsx";
+import { C, CATEGORIES, MONTH_NAMES, fmt, fmtPct, catById, genId, tint, todayStr } from "../../lib/constants";
+import { Card, Label, Field, Inp, Sel, Btn, Badge, Bar, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
+import { CatIcon, CreditCard, Trash2, ReceiptText, Wallet, ArrowLeftRight, WalletCards, ShoppingCart, ShoppingBag, ChartColumn, Users, Save, Pencil, X, FilePlus, Undo2 } from "../../lib/icons.jsx";
 import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
 import { nomeMembro, membroEfetivo } from "../Membros.jsx";
 import ImportarTab from "./ImportarTab.jsx";
+import ParceladosTab from "./ParceladosTab.jsx";
 
-export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles, cardProfilesImport, parcelados, setParcelados, categoryRules, setCategoryRules, membros = [], setMembros, temImportar = false, temAssistente = false, access = null, year, monthIdx }) {
+export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardProfiles, cardProfilesImport, parcelados, setParcelados, categoryRules, setCategoryRules, globalCategoryRules = {}, membros = [], setMembros, temImportar = false, temAssistente = false, access = null, year, monthIdx }) {
   const [importOpen, setImportOpen] = useState(false);
+  // Parcelados agora mora DENTRO do cartão (segmented control no topo).
+  const [secao, setSecao] = useState("faturas");
   const [aberto, setAberto] = useState(null);
   const [aba, setAba] = useState({});
   const [filtroPort, setFiltroPort] = useState({});
+  const [ordemCompras, setOrdemCompras] = useState({});
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [baixaId, setBaixaId] = useState(null);
@@ -53,6 +57,16 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
   }
   function getAba(id) { return aba[id] || "compras"; }
   function getFiltro(id) { return filtroPort[id] || "todos"; }
+  function getOrdem(id) { return ordemCompras[id] || "data-desc"; }
+  // Ordena as compras do cartão (por data ou por valor). Usa o valor absoluto para
+  // não jogar estornos (negativos) sempre pro fim.
+  function ordenarCompras(arr, ordem) {
+    const a = [...arr];
+    if (ordem === "data-asc") return a.sort((x, y) => new Date(x.data) - new Date(y.data));
+    if (ordem === "valor-desc") return a.sort((x, y) => Math.abs(y.valor) - Math.abs(x.valor));
+    if (ordem === "valor-asc") return a.sort((x, y) => Math.abs(x.valor) - Math.abs(y.valor));
+    return a.sort((x, y) => new Date(y.data) - new Date(x.data)); // data-desc
+  }
 
   // Filtra as faturas pelo mês visível na tela (mesRef "ano-monthIdx"). Vendo
   // junho, só aparecem faturas de junho — mesmo que haja de outros meses.
@@ -62,21 +76,58 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
   const mesNome = monthIdx != null ? MONTH_NAMES[monthIdx] : "";
 
   // Saldo devedor por CARTÃO FÍSICO (agrupado por banco+nome), somando o que
-  // não foi pago em TODAS as faturas dele. Limite disponível = limite − saldo devedor.
+  // não foi pago em TODAS as faturas dele.
   const keyCartao = (c) => `${(c.banco || "").toLowerCase().trim()}|${(c.nome || "").toLowerCase().trim()}`;
+  // Mês comparável a partir de "ano-monthIdx" (mesRef) ou "YYYY-MM-DD" (dataCompra).
+  const mesRefNum = (s) => { const [y, m] = String(s).split("-").map(Number); return y * 12 + m; };
+  const dataNum = (d) => { const y = +String(d).slice(0, 4); const m = +String(d).slice(5, 7) - 1; return y * 12 + m; };
+  const curMesNum = (year != null && monthIdx != null) ? year * 12 + monthIdx : dataNum(todayStr());
+
   const saldoInfo = {};
+  const idParaKey = {};       // cartaoId (fatura) → chave do cartão físico
+  const nomeParaKey = {};     // nome (origem do parcelado) → chave do cartão físico
+  const refMesDaKey = {};     // mês da ÚLTIMA fatura importada do cartão (fronteira faturado/futuro)
   (cartoes || []).forEach((c) => {
     const k = keyCartao(c);
     const devedor = Math.max(0, (c.total || 0) - (c.valorPago == null ? 0 : Number(c.valorPago) || 0));
-    if (!saldoInfo[k]) saldoInfo[k] = { saldoDevedor: 0, limite: 0 };
+    if (!saldoInfo[k]) saldoInfo[k] = { saldoDevedor: 0, limite: 0, parceladoFuturo: 0 };
     saldoInfo[k].saldoDevedor += devedor;
     saldoInfo[k].limite = Math.max(saldoInfo[k].limite, c.limite || 0);
+    idParaKey[c.id] = k;
+    const nm = (c.nome || "").toLowerCase().trim();
+    if (nm && !(nm in nomeParaKey)) nomeParaKey[nm] = k;
+    if (c.mesRef) refMesDaKey[k] = Math.max(refMesDaKey[k] ?? -Infinity, mesRefNum(c.mesRef));
   });
   (cardProfiles || []).forEach((p) => {
     const k = `${(p.banco || "").toLowerCase().trim()}|${(p.nome || "").toLowerCase().trim()}`;
     if (saldoInfo[k]) saldoInfo[k].limite = Math.max(saldoInfo[k].limite, p.limite || 0);
   });
-  const dispDe = (k) => Math.max(0, (saldoInfo[k] ? saldoInfo[k].limite - saldoInfo[k].saldoDevedor : 0));
+
+  // Uma compra parcelada usa o limite INTEIRO na hora, mas só é quitada mês a mês.
+  // Então as parcelas que ainda vão vencer (depois da última fatura importada)
+  // continuam comprometendo o limite — mesmo com a fatura atual paga. As parcelas
+  // até a última fatura já estão no saldoDevedor, então só contamos as futuras
+  // (evita contagem em dobro).
+  const keyDoParcelado = (p) => {
+    if (p.cartaoId && idParaKey[p.cartaoId]) return idParaKey[p.cartaoId];
+    const nm = (p.origem || "").toLowerCase().trim();
+    return (nm && nomeParaKey[nm]) ? nomeParaKey[nm] : null;
+  };
+  (parcelados || []).forEach((p) => {
+    const k = keyDoParcelado(p);
+    if (!k || !saldoInfo[k]) return; // só cartões físicos conhecidos (com fatura)
+    const n = p.totalParcelas || 1;
+    const ultimaParcela = dataNum(p.dataCompra) + n - 1;
+    // Fronteira: última fatura do cartão; sem faturas, o mês anterior ao atual
+    // (aí todas as parcelas de hoje em diante contam como comprometidas).
+    const ref = refMesDaKey[k] != null ? refMesDaKey[k] : curMesNum - 1;
+    const futuras = Math.min(n, Math.max(0, ultimaParcela - ref));
+    saldoInfo[k].parceladoFuturo += futuras * (Number(p.valorParcela) || 0);
+  });
+
+  // Limite disponível = limite − saldo devedor das faturas − parcelas futuras comprometidas.
+  const comprometidoDe = (k) => saldoInfo[k] ? (saldoInfo[k].saldoDevedor + (saldoInfo[k].parceladoFuturo || 0)) : 0;
+  const dispDe = (k) => Math.max(0, (saldoInfo[k] ? saldoInfo[k].limite - comprometidoDe(k) : 0));
 
   const semFaturasMes = !faturasMes.length;
   const totalFaturas = faturasMes.reduce((s, c) => s + c.total, 0);
@@ -99,6 +150,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
           setParcelados={setParcelados}
           categoryRules={categoryRules}
           setCategoryRules={setCategoryRules}
+          globalCategoryRules={globalCategoryRules}
           cardProfiles={cardProfilesImport}
           setTab={() => setImportOpen(false)}
           membros={membros}
@@ -112,6 +164,25 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
 
   return (
     <div>
+      {/* Segmented control: Faturas | Parcelados — Parcelados deixou de ser aba
+          de topo e passou a viver aqui dentro (pertence ao módulo de cartão). */}
+      <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 5, background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 13, padding: 5, marginBottom: 16, backdropFilter: "blur(8px)" }}>
+        {[{ id: "faturas", label: "Faturas", Icon: CreditCard }, { id: "parcelados", label: "Parcelados", Icon: ShoppingBag }].map((s) => {
+          const on = secao === s.id;
+          const n = s.id === "parcelados" ? (parcelados || []).length : 0;
+          return (
+            <button key={s.id} onClick={() => setSecao(s.id)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", borderRadius: 9, padding: "11px 8px", fontSize: 13, fontWeight: 700, cursor: "pointer", background: on ? "var(--accent)" : "transparent", color: on ? "#fff" : C.muted, boxShadow: on ? `0 2px 8px ${tint(C.accent, 40)}` : "none" }}>
+              <s.Icon size={16} /> {s.label}
+              {n > 0 && <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: on ? "rgba(255,255,255,0.25)" : tint(C.muted, 18), color: on ? "#fff" : C.muted }}>{n}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {secao === "parcelados" ? (
+        <ParceladosTab parcelados={parcelados} setParcelados={setParcelados} year={year} monthIdx={monthIdx} membros={membros} cartoesDisponiveis={cardProfilesImport} />
+      ) : (
+      <>
       {temImportar && (
         <button onClick={() => setImportOpen(true)} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: `var(--accent)`, border: "none", color: "#fff", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}><FilePlus size={16} /> Importar fatura (PDF)</button>
       )}
@@ -145,13 +216,16 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
 
       {faturasMes.map((cartao) => {
         const usado = cartao.total;
-        const limite = cartao.limite || 0;
-        const disp = Math.max(0, limite - usado);
-        const pctUso = limite > 0 ? (usado / limite) * 100 : 0;
         // Baixa/saldo por cartão físico.
         const kFis = keyCartao(cartao);
         const dispCartao = dispDe(kFis);
         const limiteCartao = saldoInfo[kFis] ? saldoInfo[kFis].limite : 0;
+        const parceladoFuturoCartao = saldoInfo[kFis] ? (saldoInfo[kFis].parceladoFuturo || 0) : 0;
+        // Barra do cartão FÍSICO: quanto do limite está comprometido (faturas em
+        // aberto + parcelas futuras), não só a fatura do mês.
+        const comprometido = limiteCartao > 0 ? comprometidoDe(kFis) : usado;
+        const limiteBar = limiteCartao > 0 ? limiteCartao : (cartao.limite || 0);
+        const pctUso = limiteBar > 0 ? (comprometido / limiteBar) * 100 : 0;
         const pago = cartao.valorPago;
         const conciliada = pago != null;
         const faltaPagar = Math.max(0, usado - (conciliada ? Number(pago) || 0 : 0));
@@ -254,12 +328,17 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
                 </div>
               </div>
             )}
-            {limite > 0 && (
+            {limiteBar > 0 && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginBottom: 4 }}>
-                  <span>Limite utilizado</span><span>{fmtPct(pctUso)}</span>
+                  <span>Limite comprometido</span><span>{fmtPct(pctUso)}</span>
                 </div>
                 <Bar pct={pctUso} color={pctUso > 80 ? C.red : pctUso > 50 ? C.amber : C.emerald} h={7} />
+                {parceladoFuturoCartao > 0.01 && (
+                  <div style={{ fontSize: 10.5, color: C.muted, marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}>
+                    <ShoppingBag size={11} /> Inclui {fmt(parceladoFuturoCartao)} em parcelas futuras ocupando o limite.
+                  </div>
+                )}
               </div>
             )}
 
@@ -297,7 +376,18 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
 
                 {tabAtual === "compras" && (
                   <div>
-                    {[...comprasFiltradas].sort((a, b) => new Date(b.data) - new Date(a.data)).map((compra) => {
+                    {comprasFiltradas.length > 1 && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>Ordenar por</span>
+                        <Sel value={getOrdem(cartao.id)} onChange={(e) => setOrdemCompras((p) => ({ ...p, [cartao.id]: e.target.value }))} style={{ width: "auto", fontSize: 12, padding: "6px 10px" }}>
+                          <option value="data-desc">Data (mais recentes)</option>
+                          <option value="data-asc">Data (mais antigas)</option>
+                          <option value="valor-desc">Maior valor</option>
+                          <option value="valor-asc">Menor valor</option>
+                        </Sel>
+                      </div>
+                    )}
+                    {ordenarCompras(comprasFiltradas, getOrdem(cartao.id)).map((compra) => {
                       const cat = catById(compra.categoria);
                       const estorno = compra.valor < 0;
                       return (
@@ -365,6 +455,8 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
           </Card>
         );
       })}
+      </>
+      )}
       </>
       )}
     </div>

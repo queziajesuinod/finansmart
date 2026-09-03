@@ -1,5 +1,6 @@
 const crypto = require("crypto");
-const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro, Holerite, RendaExtra } = require("../models");
+const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro, Holerite, RendaExtra, GlobalCategoryRule, ImportLog } = require("../models");
+const { getSetting } = require("../services/settings");
 
 // Garante que o usuário tenha um membro "principal" (criado a partir do nome
 // do próprio usuário). Chamado no getState para compatibilizar contas antigas.
@@ -27,7 +28,7 @@ async function getState(req, res, next) {
   try {
     const userId = req.user.id;
     await ensurePrincipal(userId, req.user.nome);
-    const [incomes, despesas, emprestimos, parcelados, cartoes, goals, rules, profiles, membros, holerites, rendasExtras] = await Promise.all([
+    const [incomes, despesas, emprestimos, parcelados, cartoes, goals, rules, profiles, membros, holerites, rendasExtras, globalRules] = await Promise.all([
       Income.findAll({ where: { userId } }),
       Despesa.findAll({ where: { userId } }),
       Emprestimo.findAll({ where: { userId } }),
@@ -39,10 +40,13 @@ async function getState(req, res, next) {
       Membro.findAll({ where: { userId }, order: [["ordem", "ASC"], ["nome", "ASC"]] }),
       Holerite.findAll({ where: { userId } }),
       RendaExtra.findAll({ where: { userId } }),
+      // Resiliente: se a migração 030 ainda não rodou, degrada p/ vazio em vez de
+      // derrubar o getState (que é o carregamento do app inteiro).
+      GlobalCategoryRule.findAll().catch(() => []),
     ]);
 
     res.json({
-      holerites: holerites.map((h) => ({ id: h.id, membroId: h.membroId || null, mesRef: h.mesRef, titulo: h.titulo || "", salarioBruto: num(h.salarioBruto), descontos: Array.isArray(h.descontos) ? h.descontos : [], outrosRendimentos: Array.isArray(h.outrosRendimentos) ? h.outrosRendimentos : [], recorrente: h.recorrente !== false })),
+      holerites: holerites.map((h) => ({ id: h.id, membroId: h.membroId || null, mesRef: h.mesRef, titulo: h.titulo || "", salarioBruto: num(h.salarioBruto), salarioBase: num(h.salarioBase), diasTrabalhados: h.diasTrabalhados == null ? 30 : (Number(h.diasTrabalhados) || 30), descontos: Array.isArray(h.descontos) ? h.descontos : [], outrosRendimentos: Array.isArray(h.outrosRendimentos) ? h.outrosRendimentos : [], recorrente: h.recorrente !== false })),
       rendasExtras: rendasExtras.map((r) => ({ id: r.id, membroId: r.membroId || null, mesRef: r.mesRef, descricao: r.descricao || "", valor: num(r.valor), recorrente: r.recorrente === true })),
       membros: membros.map((m) => ({ id: m.id, nome: m.nome, tipo: m.tipo, parentesco: m.parentesco, cor: m.cor, ordem: m.ordem, ativo: m.ativo })),
       incomes: incomes.map((i) => ({ ano: i.ano, mes: i.mes, renda: num(i.renda), extra: num(i.extra) })),
@@ -50,14 +54,17 @@ async function getState(req, res, next) {
       emprestimos: emprestimos.map((e) => ({
         id: e.id, instituicao: e.instituicao, contrato: e.contrato, sistema: e.sistema === "SAC" ? "SAC" : "PRICE",
         valorContratado: num(e.valorContratado),
-        taxa: num(e.taxa), parcelas: e.parcelas, pago: e.pago, pagoAuto: e.pagoAuto,
+        taxa: num(e.taxa), taxaPeriodo: e.taxaPeriodo === "anual" ? "anual" : "mensal",
+        parcelas: e.parcelas, pago: e.pago, pagoAuto: e.pagoAuto,
         dataContratacao: e.dataContratacao, dataPrimeira: e.dataPrimeira, dataQuitacao: e.dataQuitacao,
         membroId: e.membroId || null,
+        amortizacoes: Array.isArray(e.amortizacoes) ? e.amortizacoes : [],
       })),
       parcelados: parcelados.map((p) => ({
         id: p.id, descricao: p.descricao, valorTotal: num(p.valorTotal), totalParcelas: p.totalParcelas,
         parcelaAtual: p.parcelaAtual, valorParcela: num(p.valorParcela), dataCompra: p.dataCompra,
         categoria: p.categoria, origem: p.origem, cartaoId: p.cartaoId, membroId: p.membroId || null,
+        pagas: Array.isArray(p.pagas) ? p.pagas : [],
       })),
       cartoes: cartoes.map((c) => ({
         id: c.id, banco: c.banco, nome: c.nome, limite: num(c.limite), vencimentoDia: c.vencimentoDia,
@@ -69,6 +76,11 @@ async function getState(req, res, next) {
       })),
       goals: goals.map((g) => ({ id: g.id, nome: g.nome, alvo: num(g.alvo), atual: num(g.atual), prazo: g.prazo })),
       categoryRules: Object.fromEntries(rules.map((r) => [r.chave, r.categoria])),
+      // Regras GLOBAIS (promovidas pelo admin) — o importador aplica junto (as
+      // pessoais têm prioridade). Ver [[importacao-por-banco]] no domínio.
+      globalCategoryRules: Object.fromEntries(globalRules.map((r) => [r.chave, r.categoria])),
+      // Aviso global (banner) configurável pelo admin em app_settings.
+      avisoGlobal: (await getSetting("avisoGlobal", "")) || "",
       cardProfiles: profiles.map((p) => ({ id: p.id, nome: p.nome, banco: p.banco, bandeira: p.bandeira, limite: num(p.limite), vencimentoDia: p.vencimentoDia, finais: p.finais, ativo: p.ativo })),
     });
   } catch (err) {
@@ -110,9 +122,15 @@ const putDespesas = replaceAll(Despesa, (d) => ({
 const putEmprestimos = replaceAll(Emprestimo, (e) => ({
   instituicao: e.instituicao, contrato: e.contrato || null, sistema: e.sistema === "SAC" ? "SAC" : "PRICE",
   valorContratado: num(e.valorContratado),
-  taxa: num(e.taxa), parcelas: int(e.parcelas), pago: int(e.pago), pagoAuto: bool(e.pagoAuto),
+  taxa: num(e.taxa), taxaPeriodo: e.taxaPeriodo === "anual" ? "anual" : "mensal",
+  parcelas: int(e.parcelas), pago: int(e.pago), pagoAuto: bool(e.pagoAuto),
   dataContratacao: dateOrNull(e.dataContratacao), dataPrimeira: dateOrNull(e.dataPrimeira), dataQuitacao: dateOrNull(e.dataQuitacao),
   membroId: membroIdOrNull(e.membroId),
+  amortizacoes: Array.isArray(e.amortizacoes)
+    ? e.amortizacoes
+        .map((a) => ({ id: a.id || crypto.randomUUID(), data: dateOrNull(a.data), valor: num(a.valor), tipo: a.tipo === "parcela" ? "parcela" : "prazo", parcela: int(a.parcela) || 0 }))
+        .filter((a) => a.valor > 0)
+    : [],
 }));
 
 // cartaoId é ignorado no persist (referência vem de ids do frontend, não UUIDs).
@@ -121,6 +139,7 @@ const putParcelados = replaceAll(Parcelado, (p) => ({
   parcelaAtual: int(p.parcelaAtual), valorParcela: num(p.valorParcela), dataCompra: dateOrNull(p.dataCompra),
   categoria: p.categoria || "outros", origem: p.origem || null, cartaoId: null,
   membroId: membroIdOrNull(p.membroId),
+  pagas: Array.isArray(p.pagas) ? [...new Set(p.pagas.map((x) => int(x)).filter((x) => x >= 1))] : [],
 }));
 
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -128,7 +147,9 @@ const linhasValor = (lista) => arr(lista).map((x) => ({ nome: (x && x.nome) || "
 
 const putHolerites = replaceAll(Holerite, (h) => ({
   membroId: membroIdOrNull(h.membroId), mesRef: String(h.mesRef || ""), titulo: h.titulo || null,
-  salarioBruto: num(h.salarioBruto), descontos: linhasValor(h.descontos), outrosRendimentos: linhasValor(h.outrosRendimentos),
+  salarioBruto: num(h.salarioBruto), salarioBase: num(h.salarioBase),
+  diasTrabalhados: Math.min(31, Math.max(1, int(h.diasTrabalhados) || 30)),
+  descontos: linhasValor(h.descontos), outrosRendimentos: linhasValor(h.outrosRendimentos),
   recorrente: h.recorrente !== false,
 }));
 
@@ -237,4 +258,30 @@ async function putCategoryRules(req, res, next) {
   }
 }
 
-module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras };
+// Registra um log de importação (métricas parse-vs-confirmado + correções de
+// categoria). Chamado pelo cliente ao confirmar uma importação de fatura.
+async function postImportLog(req, res, next) {
+  try {
+    const b = req.body || {};
+    const correcoes = Array.isArray(b.correcoes)
+      ? b.correcoes.map((c) => ({ chave: String(c.chave || "").slice(0, 60), de: String(c.de || ""), para: String(c.para || "") })).filter((c) => c.chave).slice(0, 200)
+      : [];
+    await ImportLog.create({
+      userId: req.user.id,
+      banco: b.banco ? String(b.banco).slice(0, 60) : null,
+      mesRef: b.mesRef ? String(b.mesRef).slice(0, 10) : null,
+      fonte: b.fonte === "ia" ? "ia" : "local",
+      itensParsed: int(b.itensParsed), itensConfirmados: int(b.itensConfirmados),
+      itensRemovidos: int(b.itensRemovidos), parcelas: int(b.parcelas),
+      categoriasCorrigidas: correcoes.length || int(b.categoriasCorrigidas),
+      totalDetectado: b.totalDetectado != null ? num(b.totalDetectado) : null,
+      totalUsado: b.totalUsado != null ? num(b.totalUsado) : null,
+      limiteDetectado: b.limiteDetectado != null ? num(b.limiteDetectado) : null,
+      teveEstorno: bool(b.teveEstorno),
+      correcoes,
+    });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+}
+
+module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras, postImportLog };

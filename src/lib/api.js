@@ -87,6 +87,8 @@ export async function getState() {
     cartoes: s.cartoes || [],
     goals: s.goals || [],
     categoryRules: s.categoryRules || {},
+    globalCategoryRules: s.globalCategoryRules || {},
+    avisoGlobal: s.avisoGlobal || "",
     cardProfiles: s.cardProfiles || [],
     membros: s.membros || [],
     holerites: s.holerites || [],
@@ -137,6 +139,10 @@ export function aiImportFatura({ texto, refYear, refMonth }) {
   return request("POST", "/api/import/ai", { texto, refYear, refMonth });
 }
 
+// Registra o resumo de uma importação (métricas + correções) p/ a análise do admin.
+// Best-effort: nunca deve travar a importação, então o chamador ignora erros.
+export function saveImportLog(report) { return request("POST", "/api/import-log", report || {}); }
+
 // ─── Assistente financeiro (IA) ──────────────────────────────
 export function askAssistant({ pergunta, contexto, historico }) {
   return request("POST", "/api/assistant", { pergunta, contexto, historico });
@@ -155,8 +161,15 @@ export const admin = {
   planCreate: (b) => request("POST", "/admin/plans", b),
   planUpdate: (id, b) => request("PUT", `/admin/plans/${id}`, b),
   planDelete: (id) => request("DELETE", `/admin/plans/${id}`),
-  users: () => request("GET", "/admin/users"),
+  users: (qs = "") => request("GET", `/admin/users${qs ? `?${qs}` : ""}`),
+  userDetail: (id) => request("GET", `/admin/users/${id}`),
   userGrant: (id, b) => request("POST", `/admin/users/${id}/grant`, b),
   userRevoke: (id) => request("POST", `/admin/users/${id}/revoke`),
   userRole: (id, b) => request("POST", `/admin/users/${id}/role`, b),
+  imports: (page = 1) => request("GET", `/admin/imports?page=${page}`),
+  globalRulePromote: (b) => request("POST", "/admin/global-rules", b),
+  globalRuleDelete: (id) => request("DELETE", `/admin/global-rules/${id}`),
+  overview: () => request("GET", "/admin/overview"),
+  settings: () => request("GET", "/admin/settings"),
+  settingsSave: (b) => request("PUT", "/admin/settings", b),
 };

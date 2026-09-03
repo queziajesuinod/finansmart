@@ -67,7 +67,7 @@ const MESES3 = { jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5, jul: 6, ago: 7,
 const mesFromTok = (tok) => MESES3[String(tok).toLowerCase().slice(0, 3)];
 
 // Linhas que NÃO são compras (pagamentos, saldos, cabeçalhos).
-const SKIP = /pagamento em |pagamento recebido|obrigad[oa] pelo pagamento|pagamento efetuad|saldo restante|saldo anterior|saldo em aberto|total da fatura|fatura anterior|total de compras|^total\b|^limite|^utilizado|^dispon[ií]vel|pontos|bonifica|fator convers|total a pagar|valor total desta|melhor data|despesas a vencer|resumo da fatura|lan[çc]amentos:? *produtos/i;
+const SKIP = /pagamento em |pagamento recebido|obrigad[oa] pelo pagamento|pagamento efetuad|pagto|d[ée]bito em conta|deb\.? em c\/c|saldo restante|saldo anterior|saldo em aberto|total da fatura|fatura anterior|total de compras|^total\b|^limite|^utilizado|^dispon[ií]vel|pontos|bonifica|fator convers|total a pagar|valor total desta|melhor data|despesas a vencer|resumo da fatura|lan[çc]amentos:? *produtos/i;
 
 // Detecta a data no INÍCIO da linha. Retorna {dia, mes(0-11), ano|null, len}.
 function parseData(linha) {
@@ -89,7 +89,10 @@ function parseData(linha) {
 
 // Pega o ÚLTIMO valor monetário da linha. Retorna {valor, index}.
 function parseValor(linha) {
-  const re = /(-|−|–)?\s*R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})\s*([DdCc])?/g;
+  // O sufixo D/C (crédito/débito, estilo CAIXA) só vale quando é uma letra SOLTA —
+  // senão a inicial da cidade seguinte (ex.: "18,61 Campo") era lida como "C" (crédito)
+  // e a compra virava estorno. O lookahead exige que não haja letra logo após.
+  const re = /(-|−|–)?\s*R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})\s*([DdCc](?![A-Za-zÀ-ú]))?/g;
   let m, last = null;
   while ((m = re.exec(linha)) !== null) last = m;
   if (!last) return null;
@@ -109,7 +112,7 @@ export function extrairPagamentos(texto, year) {
   const linhas = (texto || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const out = [];
   for (const linha of linhas) {
-    if (!/pagamento\s+em\b/i.test(linha)) continue;
+    if (!/pagamento\s+em\b|pagto|d[ée]bito\s+em\s+conta|deb\.?\s+em\s+c\/c/i.test(linha)) continue;
     const dt = parseData(linha);
     if (!dt) continue;
     const vl = parseValor(linha);
@@ -127,6 +130,9 @@ function limparDescricao(desc) {
     .replace(/[•·]{2,}\s*\d+/g, " ")              // •••• 4354
     .replace(/\*{3,}\s*\d+/g, " ")
     .replace(/\s*-\s*NuPay/ig, " ")
+    // Resíduo de extração colada: um valor monetário no meio da descrição (e tudo
+    // depois dele) não faz parte do nome (ex.: "... 975,14 Saque R$ 15.000,00").
+    .replace(/\s+R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}[\s\S]*$/, " ")
     .replace(/\bBRL\b.*$/i, " ")                   // resíduo de conversão de moeda
     .replace(/\bUSD\b.*$/i, " ")
     .replace(/\bconvers[ãa]o\b.*$/i, " ")
@@ -136,6 +142,13 @@ function limparDescricao(desc) {
 }
 
 function parseGenerico(texto, year, monthIdx) {
+  // Referência da fatura p/ inferir o ANO de datas sem ano (dd/mm). O vencimento
+  // impresso manda; senão, o mês/ano visível. Uma data cujo MÊS é posterior ao
+  // vencimento é do ano anterior (parcela antiga que o banco mostra com a data
+  // original — ex.: Bradesco "30/10 parc. 10/12" numa fatura de setembro = 2025).
+  let refY = year, refM = monthIdx + 1;
+  const mvenc = (texto || "").replace(/\s+/g, " ").match(/vencimento\b[\s\S]{0,60}?(\d{2})\/(\d{2})\/(\d{4})/i);
+  if (mvenc) { refM = parseInt(mvenc[2], 10); refY = parseInt(mvenc[3], 10); }
   const linhas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const out = [];
   for (const linha of linhas) {
@@ -152,7 +165,9 @@ function parseGenerico(texto, year, monthIdx) {
     const desc = limparDescricao(raw.replace(/\s*-?\s*parcela\s*\d+\s*\/\s*\d+/ig, "")) || raw;
     if (!desc || !/[a-zA-Z]/.test(desc)) continue;
 
-    const ano = dt.ano || year;
+    // Ano: se veio explícito na data, usa; senão infere pela referência da fatura.
+    let ano = dt.ano;
+    if (ano == null) ano = (dt.mes + 1) > refM ? refY - 1 : refY;
     const dd = String(dt.dia).padStart(2, "0");
     const mm = String(dt.mes + 1).padStart(2, "0");
     out.push({

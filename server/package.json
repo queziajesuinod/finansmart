@@ -14,7 +14,8 @@
     "db:setup": "sequelize-cli db:create && sequelize-cli db:migrate && sequelize-cli db:seed:all",
     "db:reset": "sequelize-cli db:drop && sequelize-cli db:create && sequelize-cli db:migrate && sequelize-cli db:seed:all",
     "grant": "node src/scripts/grantSubscription.js",
-    "manage": "node src/scripts/manage.js"
+    "manage": "node src/scripts/manage.js",
+    "fix:parcelados": "node src/scripts/fixParceladosDatas.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
