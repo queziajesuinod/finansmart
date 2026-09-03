@@ -204,7 +204,15 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     return { label: "Déficit", statusIcon: "deficit", color: C.red, bg: tint(C.red, 8), desc: "Gastos projetados excedem a renda." };
   }, [projecao, totalRenda]);
 
-  const porCategoria = useMemo(() => CATEGORIES.map((c) => ({ ...c, total: despesas.filter((d) => d.categoria === c.id).reduce((s, d) => s + d.valor, 0) })).filter((c) => c.total > 0).sort((a, b) => b.total - a.total), [despesas]);
+  const porCategoria = useMemo(() => {
+    // Gastos por categoria = lançamentos avulsos + compras de cartão da fatura do mês.
+    const comprasMes = (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`).flatMap((c) => c.compras || []);
+    return CATEGORIES.map((c) => {
+      const totalDespesas = despesas.filter((d) => d.categoria === c.id).reduce((s, d) => s + d.valor, 0);
+      const totalCartao = comprasMes.filter((x) => (x.categoria || "outros") === c.id).reduce((s, x) => s + (Number(x.valor) || 0), 0);
+      return { ...c, total: totalDespesas + totalCartao };
+    }).filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
+  }, [despesas, cartoes, year, monthIdx]);
 
   const historicoMeses = useMemo(() => Array.from({ length: 6 }, (_, i) => {
     const d = new Date(year, monthIdx - 5 + i, 1);
