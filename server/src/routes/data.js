@@ -25,6 +25,7 @@ router.put("/card-profiles", c.putCardProfiles);
 router.put("/membros", c.putMembros);
 router.put("/holerites", c.putHolerites);
 router.put("/rendas-extras", c.putRendasExtras);
+router.put("/investimentos", c.putInvestimentos);
 
 // Log de importação (métricas + correções) — alimenta a análise do admin.
 router.post("/import-log", c.postImportLog);

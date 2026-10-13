@@ -466,7 +466,7 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
 // ─── Meus Cartões (perfis cadastrados) ───────────────────────
 function MeusCartoes({ cardProfiles, setCardProfiles }) {
   const [list, setList] = useState(cardProfiles || []);
-  const [novo, setNovo] = useState({ nome: "", banco: "", limite: "", vencimentoDia: "", finais: "" });
+  const [novo, setNovo] = useState({ nome: "", banco: "", limite: "", vencimentoDia: "", fechamentoDia: "", finais: "" });
   useEffect(() => { setList(cardProfiles || []); }, [cardProfiles]);
 
   const upd = (id, k, v) => setList((l) => l.map((p) => (p.id === id ? { ...p, [k]: v } : p)));
@@ -477,9 +477,10 @@ function MeusCartoes({ cardProfiles, setCardProfiles }) {
       id: genId(), nome: novo.nome.trim(), banco: novo.banco.trim(),
       limite: parseFloat((novo.limite || "").replace(",", ".")) || 0,
       vencimentoDia: parseInt(novo.vencimentoDia) || null,
+      fechamentoDia: parseInt(novo.fechamentoDia) || null,
       finais: (novo.finais || "").replace(/\D/g, "").slice(-4),
     }]);
-    setNovo({ nome: "", banco: "", limite: "", vencimentoDia: "", finais: "" });
+    setNovo({ nome: "", banco: "", limite: "", vencimentoDia: "", fechamentoDia: "", finais: "" });
   }
   const dirty = JSON.stringify(list) !== JSON.stringify(cardProfiles || []);
   const nf = (k) => (e) => setNovo((p) => ({ ...p, [k]: e.target.value }));
@@ -489,7 +490,7 @@ function MeusCartoes({ cardProfiles, setCardProfiles }) {
   return (
     <Card style={{ marginBottom: 16 }}>
       <STitle><IcoTxt Icon={WalletCards} size={15}>Meus cartões</IcoTxt></STitle>
-      <p style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>Cadastre seus cartões uma vez. Na importação de fatura eles são reconhecidos automaticamente (pelo banco ou pelos 4 finais) e pré-preenchem os dados.</p>
+      <p style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>Cadastre seus cartões uma vez. Na importação de fatura eles são reconhecidos automaticamente (pelo banco ou pelos 4 finais) e pré-preenchem os dados. <strong style={{ color: C.subtle }}>Fecha</strong> é o dia em que a fatura vira: compra até esse dia entra na fatura do mês; depois dele, na seguinte — é o que define em que mês cai a 1ª parcela de uma compra parcelada.</p>
 
       {list.map((p) => (
         <div key={p.id} style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
@@ -498,6 +499,7 @@ function MeusCartoes({ cardProfiles, setCardProfiles }) {
             <Field label="Banco"><Inp value={p.banco || ""} onChange={(e) => upd(p.id, "banco", e.target.value)} /></Field>
             <Field label="Limite"><MoneyInput value={p.limite ?? ""} onChange={(e) => upd(p.id, "limite", e.target.value)} /></Field>
             <Field label="Venc."><Inp type="number" placeholder="dia" value={p.vencimentoDia ?? ""} onChange={(e) => upd(p.id, "vencimentoDia", e.target.value)} /></Field>
+            <Field label="Fecha"><Inp type="number" min={1} max={31} placeholder="dia" value={p.fechamentoDia ?? ""} onChange={(e) => upd(p.id, "fechamentoDia", e.target.value)} /></Field>
             <Field label="4 finais"><Inp value={p.finais || ""} maxLength={4} onChange={(e) => upd(p.id, "finais", e.target.value.replace(/\D/g, ""))} /></Field>
             <button className="cp-btn" aria-label="Remover cartão" onClick={() => rm(p.id)} style={{ padding: "9px 10px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>
           </div>
@@ -511,6 +513,7 @@ function MeusCartoes({ cardProfiles, setCardProfiles }) {
           <Field label="Banco"><Inp placeholder="Ex: Nubank" value={novo.banco} onChange={nf("banco")} /></Field>
           <Field label="Limite"><MoneyInput placeholder="0,00" value={novo.limite} onChange={nf("limite")} /></Field>
           <Field label="Venc."><Inp type="number" placeholder="dia" value={novo.vencimentoDia} onChange={nf("vencimentoDia")} /></Field>
+          <Field label="Fecha"><Inp type="number" min={1} max={31} placeholder="dia" value={novo.fechamentoDia} onChange={nf("fechamentoDia")} /></Field>
           <Field label="4 finais"><Inp placeholder="0000" maxLength={4} value={novo.finais} onChange={(e) => setNovo((p) => ({ ...p, finais: e.target.value.replace(/\D/g, "") }))} /></Field>
           <Btn className="cp-btn" variant="sm" onClick={add}>+ Add</Btn>
         </div>

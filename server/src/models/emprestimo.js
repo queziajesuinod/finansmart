@@ -16,6 +16,8 @@ module.exports = (sequelize, DataTypes) => {
       dataContratacao: { type: DataTypes.DATEONLY, allowNull: true },
       dataPrimeira: { type: DataTypes.DATEONLY, allowNull: true },
       dataQuitacao: { type: DataTypes.DATEONLY, allowNull: true },
+      // Dia do mês em que a parcela vence (null = dia da 1ª parcela).
+      diaVencimento: { type: DataTypes.INTEGER, allowNull: true },
       membroId: { type: DataTypes.STRING, allowNull: true },
       // Aportes extraordinários: [{ id, data, valor, tipo: "prazo"|"parcela", parcela }].
       amortizacoes: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },

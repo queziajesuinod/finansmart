@@ -1,19 +1,27 @@
 // @ts-nocheck
 import { useState, useRef } from "react";
-import { C, MONTH_NAMES, fmt, tint } from "../../lib/constants";
-import { calcParcela, calcSaldoDevedor } from "../../lib/finance";
+import { C, MONTH_NAMES, fmt, tint, entradasDoMes, mesRefDe } from "../../lib/constants";
 import { askAssistant } from "../../lib/api";
 import { LogoMark } from "../Logo.jsx";
 
-export default function AssistenteTab({ chat, setChat, totalRenda, totalDespesas, saldoAtual, projecao, statusInfo, porCategoria, goals, emprestimos, parcelados, monthIdx, year }) {
+export default function AssistenteTab({ chat, setChat, totalRenda, totalDespesas, saldoAtual, projecao, statusInfo, porCategoria, goals, emprestimos, parcelados, parcelasMensais = 0, totalEmprestimos = 0, investimentos = [], holerites = [], rendasExtras = [], monthIdx, year }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const ref = useRef();
 
   // Monta o resumo financeiro do mês para a IA (ela responde só com base nisso).
   function montarContexto() {
-    const totalSD = emprestimos.reduce((s, e) => s + calcSaldoDevedor(e.valorContratado, e.taxa, e.parcelas, e.pago, e.sistema), 0);
-    const totalPMT = emprestimos.reduce((s, e) => s + calcParcela(e.sistema, e.valorContratado, e.taxa, e.parcelas, (e.pago || 0) + 1), 0);
+    // Empréstimos: os MESMOS totais das telas (já com aportes e parcelas pagas).
+    const totalSD = totalEmprestimos;
+    const totalPMT = parcelasMensais;
+    const entradas = entradasDoMes(holerites, rendasExtras, year, monthIdx);
+    const mr = mesRefDe(year, monthIdx);
+    const saldoInv = (v) => {
+      const ate = (v.historico || []).filter((h) => h.mesRef <= mr).sort((a, b) => a.mesRef.localeCompare(b.mesRef));
+      return ate.length ? Number(ate[ate.length - 1].saldo) || 0 : Number(v.valorAplicado) || 0;
+    };
+    const totalAplicado = investimentos.reduce((s, v) => s + (Number(v.valorAplicado) || 0), 0);
+    const totalInvestido = investimentos.reduce((s, v) => s + saldoInv(v), 0);
     return [
       `Mês de referência: ${MONTH_NAMES[monthIdx]}/${year}`,
       `Renda total: ${fmt(totalRenda)}`,
@@ -25,6 +33,8 @@ export default function AssistenteTab({ chat, setChat, totalRenda, totalDespesas
       `Empréstimos: ${emprestimos.length} contrato(s), saldo devedor ${fmt(totalSD)}, parcelas ${fmt(totalPMT)}/mês`,
       `Metas: ${goals.map((g) => `${g.nome} ${fmt(g.atual)}/${fmt(g.alvo)}`).join(", ") || "nenhuma"}`,
       `Compras parceladas ativas: ${parcelados.length}`,
+      `Entradas do mês: ${entradas.map((e) => `${e.descricao} ${fmt(e.valor)}${e.data ? ` no dia ${e.data.slice(8, 10)}` : ""}`).join(", ") || "nenhuma"}`,
+      `Investimentos: ${investimentos.length} aplicação(ões), total aplicado ${fmt(totalAplicado)}, saldo atual ${fmt(totalInvestido)}`,
     ].join("\n");
   }
 

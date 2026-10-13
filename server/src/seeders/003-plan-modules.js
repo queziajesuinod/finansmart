@@ -5,7 +5,7 @@ const { randomUUID } = require("crypto");
 // Quais módulos cada plano libera (por chave).
 const PLAN_MODULES = {
   basico: ["dashboard", "lancamentos", "extrato", "metas", "historico"],
-  completo: ["dashboard", "lancamentos", "extrato", "cartoes", "emprestimos", "metas", "historico", "assistente"],
+  completo: ["dashboard", "lancamentos", "extrato", "cartoes", "emprestimos", "investimentos", "metas", "historico", "assistente"],
 };
 
 module.exports = {

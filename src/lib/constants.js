@@ -174,3 +174,23 @@ export function rendasExtrasDoMes(rendasExtras, year, monthIdx) {
     return r.recorrente ? idx <= alvo : idx === alvo;
   });
 }
+
+// Entradas (receitas) de um mês com a data em que caem: holerites vigentes (pelo
+// dia de recebimento) + rendas extras (pela data informada). Ordenadas por data;
+// as sem data ficam por último. Usado na aba Receitas e no Extrato.
+export function entradasDoMes(holerites, rendasExtras, year, monthIdx) {
+  const ultimoDia = daysInMonth(year, monthIdx);
+  const iso = (dia) => (dia >= 1 && dia <= 31 ? `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(Math.min(dia, ultimoDia)).padStart(2, "0")}` : null);
+  const fixas = holeritesVigentes(holerites, year, monthIdx).map((h) => ({
+    id: `h-${h.id}`, tipo: "holerite", descricao: h.titulo || "Salário", valor: rendaHolerite(h),
+    data: iso(parseInt(h.diaRecebimento, 10) || 0), membroId: h.membroId || null,
+  }));
+  const extras = rendasExtrasDoMes(rendasExtras, year, monthIdx).map((r) => ({
+    id: `r-${r.id}`, tipo: "extra", descricao: r.descricao || "Renda extra", valor: Number(r.valor) || 0,
+    data: r.data ? iso(parseInt(String(r.data).slice(8, 10), 10) || 0) : null, membroId: r.membroId || null,
+  }));
+  return [...fixas, ...extras].sort((a, b) => {
+    if (a.data && b.data) return a.data.localeCompare(b.data);
+    return a.data ? -1 : b.data ? 1 : 0;
+  });
+}

@@ -18,6 +18,7 @@ module.exports = (sequelize, DataTypes) => {
       descontos: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
       outrosRendimentos: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
       recorrente: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }, // herda meses seguintes
+      diaRecebimento: { type: DataTypes.INTEGER, allowNull: true }, // dia do mês em que o salário entra
     },
     { tableName: "holerites", indexes: [{ fields: ["userId", "mesRef"] }] }
   );

@@ -107,6 +107,9 @@ export function resumoEmprestimo(sistema, pv, taxaMensal, n) {
 // da parcela `parcela`:  { parcela, valor, tipo }.
 //   tipo "prazo"   → mantém a prestação e encurta o prazo (menos parcelas).
 //   tipo "parcela" → mantém o prazo e reduz a prestação (recalcula a partir do saldo).
+// Um aporte pode trazer os valores informados pelo banco, que SUBSTITUEM o cálculo
+// automático dali em diante: novoSaldo (saldo devedor após o aporte), novaParcela
+// (prestação seguinte, só Price) e novoPrazo (parcelas restantes).
 // Retorna as linhas do fluxo: { k, pmt(prestação), juros, amort, extra, saldo }.
 export function amortize(sistema, pv, taxaMensal, n, extras = []) {
   const rows = [];
@@ -118,14 +121,18 @@ export function amortize(sistema, pv, taxaMensal, n, extras = []) {
   for (const e of extras || []) {
     const k = Math.max(1, Math.trunc(Number(e.parcela) || 0));
     const val = Math.max(0, Number(e.valor) || 0);
-    if (!val) continue;
-    (byParcela[k] = byParcela[k] || []).push({ valor: val, tipo: e.tipo === "parcela" ? "parcela" : "prazo" });
+    const novoSaldo = Math.max(0, Number(e.novoSaldo) || 0);
+    const novaParcela = Math.max(0, Number(e.novaParcela) || 0);
+    const novoPrazo = Math.max(0, Math.trunc(Number(e.novoPrazo) || 0));
+    if (!val && !novoSaldo && !novaParcela && !novoPrazo) continue;
+    (byParcela[k] = byParcela[k] || []).push({ valor: val, tipo: e.tipo === "parcela" ? "parcela" : "prazo", novoSaldo, novaParcela, novoPrazo });
   }
 
   let saldo = pv;
   let nAlvo = n;                                  // parcela final alvo (muda ao reduzir prazo)
   let pmt = sac ? 0 : calcPMT(pv, taxaMensal, n); // prestação Price
   let amortFixa = sac ? pv / n : 0;               // amortização SAC
+  let prazoFixo = false;                          // prazo informado pelo banco: quita em nAlvo
 
   // Meses p/ quitar `sld` mantendo a prestação/amortização atual.
   const projetaMeses = (sld) => {
@@ -144,6 +151,7 @@ export function amortize(sistema, pv, taxaMensal, n, extras = []) {
     let amort = sac ? Math.min(amortFixa, saldo) : Math.min(pmt - juros, saldo);
     if (amort < 0) amort = 0;
     if (saldo - amort < 0.005) amort = saldo; // fecha o resíduo na última
+    if (prazoFixo && k >= nAlvo) amort = saldo; // prazo do banco: a última parcela quita
     const prest = juros + amort;
     saldo = Math.max(0, saldo - amort);
 
@@ -151,13 +159,25 @@ export function amortize(sistema, pv, taxaMensal, n, extras = []) {
     const exs = byParcela[k];
     if (exs && saldo > 0.005) {
       let tipoUlt = "prazo";
+      let banco = null; // último aporte com valores informados pelo banco
       for (const e of exs) {
         const val = Math.min(e.valor, saldo);
         saldo = Math.max(0, saldo - val);
         extra += val;
         tipoUlt = e.tipo;
+        if (e.novoSaldo || e.novaParcela || e.novoPrazo) banco = e;
       }
-      if (saldo > 0.005) {
+      if (banco && banco.novoSaldo) saldo = banco.novoSaldo;
+      if (banco && banco.novoPrazo && saldo > 0.005) {
+        nAlvo = k + banco.novoPrazo;
+        prazoFixo = true;
+        pmt = sac ? 0 : (banco.novaParcela || calcPMT(saldo, taxaMensal, banco.novoPrazo));
+        amortFixa = sac ? saldo / banco.novoPrazo : 0;
+      } else if (banco && banco.novaParcela && !sac && saldo > 0.005) {
+        pmt = banco.novaParcela;
+        prazoFixo = false;
+        nAlvo = k + projetaMeses(saldo);
+      } else if (saldo > 0.005) {
         if (tipoUlt === "parcela") {
           const rem = Math.max(1, nAlvo - k);          // mantém o prazo → recalcula prestação
           pmt = sac ? 0 : calcPMT(saldo, taxaMensal, rem);
@@ -203,6 +223,57 @@ export function calcParcelasPagas(dataPrimeira, n) {
   if (hoje.getDate() >= d1.getDate()) meses += 1;
 
   return Math.min(n, Math.max(0, meses));
+}
+
+// Dia do mês em que a parcela do empréstimo vence: o informado ou o da 1ª parcela.
+export function diaVencimentoEmprestimo(emp) {
+  const d = parseInt(emp && emp.diaVencimento, 10);
+  if (d >= 1 && d <= 31) return d;
+  if (emp && emp.dataPrimeira) {
+    const d1 = new Date(`${emp.dataPrimeira}T12:00:00`);
+    if (!Number.isNaN(d1.getTime())) return d1.getDate();
+  }
+  return null;
+}
+
+// Parcela do empréstimo que cai em (year, monthIdx): { k, total, valor, data } ou null
+// quando o contrato não tem parcela naquele mês. Com data da 1ª parcela, o nº da
+// parcela sai do calendário; sem ela, vale a próxima a vencer (parcelas pagas manual).
+export function parcelaEmprestimoNoMes(emp, year, monthIdx) {
+  const rows = emprestimoRows(emp);
+  if (!rows.length) return null;
+  const dia = diaVencimentoEmprestimo(emp);
+  const ultimoDia = new Date(year, monthIdx + 1, 0).getDate();
+  const data = dia ? `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(Math.min(dia, ultimoDia)).padStart(2, "0")}` : null;
+  const d1 = emp.dataPrimeira ? new Date(`${emp.dataPrimeira}T12:00:00`) : null;
+  if (d1 && !Number.isNaN(d1.getTime())) {
+    const k = (year - d1.getFullYear()) * 12 + (monthIdx - d1.getMonth()) + 1;
+    if (k < 1 || k > rows.length) return null;
+    return { k, total: rows.length, valor: rows[k - 1].pmt, data };
+  }
+  const p = Math.min(rows.length, Math.max(0, emp.pago || 0));
+  if (p >= rows.length) return null;
+  return { k: p + 1, total: rows.length, valor: rows[p].pmt, data };
+}
+
+// ─── Cartão: mês da 1ª parcela a partir da data real da compra ───────
+// `fechamentoDia` é o dia em que a fatura "vira": compra até esse dia entra na
+// fatura que fecha no próprio mês; depois dele, na do mês seguinte. A parcela conta
+// no mês em que a fatura VENCE — o seguinte ao fechamento quando o vencimento cai
+// antes (ou no mesmo dia) do fechamento. Sem vencimento, vale o mês do fechamento.
+// Retorna "YYYY-MM-DD" (âncora da 1ª parcela) ou "" se não der para calcular.
+export function primeiraParcelaCartao(dataCompraReal, fechamentoDia, vencimentoDia) {
+  const fech = parseInt(fechamentoDia, 10);
+  if (!dataCompraReal || !(fech >= 1 && fech <= 31)) return "";
+  const d = new Date(`${String(dataCompraReal).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  const venc = parseInt(vencimentoDia, 10);
+  let meses = 0;
+  if (d.getDate() > fech) meses += 1;
+  if (venc >= 1 && venc <= 31 && venc <= fech) meses += 1;
+  const alvo = new Date(d.getFullYear(), d.getMonth() + meses, 1, 12, 0, 0);
+  const dia = Math.min(d.getDate(), 28);
+  return `${alvo.getFullYear()}-${String(alvo.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 }
 
 export function calcDataQuitacao(dataPrimeira, n) {

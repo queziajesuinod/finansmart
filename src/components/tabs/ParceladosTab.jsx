@@ -4,9 +4,10 @@ import { C, CATEGORIES, todayStr, fmt, genId, catById, tint, addMonths, monthDif
 import { Card, Label, Field, Inp, Sel, Btn, Badge, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { CatIcon, Pencil, Trash2, Save, Check, ShoppingBag, Flag, Siren } from "../../lib/icons.jsx";
 import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
+import { primeiraParcelaCartao } from "../../lib/finance";
 
 export default function ParceladosTab({ parcelados, setParcelados, year, monthIdx, membros = [], cartoesDisponiveis = [] }) {
-  const EMPTY = { descricao: "", valorTotal: "", totalParcelas: "", parcelaAtual: "1", dataCompra: todayStr(), categoria: "outros", membroId: null, origem: "" };
+  const EMPTY = { descricao: "", valorTotal: "", totalParcelas: "", parcelaAtual: "1", dataCompra: todayStr(), dataCompraReal: todayStr(), categoria: "outros", membroId: null, origem: "" };
   // Cartões oferecidos no seletor (dedup por nome). Com cartão → abate o limite
   // daquele cartão; sem cartão → carnê/boleto, entra só na despesa.
   const cartoesOpts = [...new Map((cartoesDisponiveis || []).filter((c) => c && c.nome).map((c) => [c.nome, c])).values()];
@@ -16,6 +17,19 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
   const [filtroMembro, setFiltroMembro] = useState("todos");
   const formRef = useRef(null);
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  // `dataCompra` é a âncora da 1ª parcela (todo o cálculo de meses parte dela);
+  // `dataCompraReal` é o dia em que a compra foi feita. Com um cartão que tem dia de
+  // fechamento cadastrado, a 1ª parcela sai da data real: até o fechamento fica na
+  // fatura do mês, depois dele vai para a seguinte. Sem fechamento, as duas coincidem.
+  const cartaoDe = (nome) => cartoesOpts.find((c) => c.nome === nome);
+  function recalcPrimeira(next) {
+    const c = cartaoDe(next.origem);
+    const real = next.dataCompraReal || next.dataCompra;
+    const auto = c && c.fechamentoDia ? primeiraParcelaCartao(real, c.fechamentoDia, c.vencimentoDia) : "";
+    return { ...next, dataCompraReal: real, dataCompra: auto || real };
+  }
+  const fRecalc = (k) => (e) => setForm((p) => recalcPrimeira({ ...p, [k]: e.target.value }));
 
   // Ao editar (form abre no topo, mas o card pode estar lá embaixo), rola até o formulário.
   useEffect(() => {
@@ -44,12 +58,12 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
 
   function submit() {
     if (!form.descricao || !valorTotal || !n) return;
-    const entry = { ...form, valorTotal, totalParcelas: n, parcelaAtual: pAtual, valorParcela, id: editId || genId() };
+    const entry = { ...form, dataCompra: form.dataCompra || form.dataCompraReal, dataCompraReal: form.dataCompraReal || null, valorTotal, totalParcelas: n, parcelaAtual: pAtual, valorParcela, id: editId || genId() };
     if (editId) setParcelados(parcelados.map((p) => (p.id === editId ? entry : p)));
     else setParcelados([...parcelados, entry]);
     setForm(EMPTY); setEditId(null); setShowForm(false);
   }
-  function startEdit(p) { setForm({ ...p, valorTotal: String(p.valorTotal), totalParcelas: String(p.totalParcelas), parcelaAtual: String(p.parcelaAtual) }); setEditId(p.id); setShowForm(true); }
+  function startEdit(p) { setForm({ ...p, dataCompraReal: p.dataCompraReal || p.dataCompra, valorTotal: String(p.valorTotal), totalParcelas: String(p.totalParcelas), parcelaAtual: String(p.parcelaAtual) }); setEditId(p.id); setShowForm(true); }
 
   // Baixa manual por parcela: alterna a parcela nº `parcela` entre paga/não paga.
   // É só status/histórico — a parcela conta como despesa pela data, independente disto.
@@ -101,19 +115,27 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
             <Field label="Valor Total (R$)"><MoneyInput placeholder="0,00" value={form.valorTotal} onChange={f("valorTotal")} /></Field>
             <Field label="Total de Parcelas"><Inp type="number" placeholder="Ex: 12" value={form.totalParcelas} onChange={f("totalParcelas")} /></Field>
             <Field label="Parcela Atual"><Inp type="number" placeholder="1" value={form.parcelaAtual} onChange={f("parcelaAtual")} /></Field>
-            <Field label="Data da Compra"><Inp type="date" value={form.dataCompra} onChange={f("dataCompra")} /></Field>
+            <Field label="Data da Compra"><Inp type="date" value={form.dataCompraReal || form.dataCompra} onChange={fRecalc("dataCompraReal")} /></Field>
             <Field label="Categoria" span={2}>
               <Sel value={form.categoria} onChange={f("categoria")}>
                 {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
               </Sel>
             </Field>
             <Field label="Cartão" span={2}>
-              <Sel value={form.origem || ""} onChange={f("origem")}>
+              <Sel value={form.origem || ""} onChange={fRecalc("origem")}>
                 <option value="">Sem cartão (carnê / boleto)</option>
                 {form.origem && !cartoesOpts.some((c) => c.nome === form.origem) && <option value={form.origem}>{form.origem}</option>}
                 {cartoesOpts.map((c) => <option key={c.nome} value={c.nome}>{c.nome}{c.banco ? ` · ${c.banco}` : ""}</option>)}
               </Sel>
               <div style={{ fontSize: 10.5, color: C.muted, marginTop: 5, lineHeight: 1.4 }}>Com cartão, a compra abate o limite dele. Sem cartão, entra só nas despesas do mês.</div>
+            </Field>
+            <Field label="1ª parcela em" span={2}>
+              <Inp type="date" value={form.dataCompra} onChange={f("dataCompra")} style={{ maxWidth: 220 }} />
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 5, lineHeight: 1.4 }}>
+                {cartaoDe(form.origem) && cartaoDe(form.origem).fechamentoDia
+                  ? `Calculado pelo fechamento do cartão (dia ${cartaoDe(form.origem).fechamentoDia}): compra até esse dia entra na fatura do mês; depois, na seguinte. Pode ajustar à mão.`
+                  : (form.origem ? 'Este cartão não tem dia de fechamento cadastrado em "Meus cartões"; a 1ª parcela fica no mês da compra. Ajuste aqui se a fatura virar antes.' : "Mês em que a 1ª parcela é cobrada. As demais seguem mês a mês.")}
+              </div>
             </Field>
           </div>
           <MembroSelect membros={membros} value={form.membroId} onChange={(v) => setForm((p) => ({ ...p, membroId: v }))} label="De quem é esta compra?" style={{ marginBottom: 12 }} />
@@ -161,7 +183,7 @@ export default function ParceladosTab({ parcelados, setParcelados, year, monthId
                     {p.descricao}
                     {temMembros && <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: "color-mix(in srgb, var(--accent) 12%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{nomeMembro(p.membroId, membros)}</span>}
                   </div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{cat.label} · Compra: {new Date(p.dataCompra + "T12:00:00").toLocaleDateString("pt-BR")}{p.origem ? ` · ${p.origem}` : ""}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{cat.label} · Compra: {new Date((p.dataCompraReal || p.dataCompra) + "T12:00:00").toLocaleDateString("pt-BR")}{p.dataCompraReal && String(p.dataCompraReal).slice(0, 7) !== String(p.dataCompra).slice(0, 7) ? ` · 1ª parcela ${String(p.dataCompra).slice(5, 7)}/${String(p.dataCompra).slice(0, 4)}` : ""}{p.origem ? ` · ${p.origem}` : ""}</div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 5 }}>

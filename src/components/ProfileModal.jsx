@@ -36,7 +36,7 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
   async function salvarSenha() {
     setSMsg(""); setSErr(""); setBusy(true);
     try {
-      if (pwd.novaSenha.length < 6) throw new Error("A nova senha deve ter ao menos 6 caracteres.");
+      if (pwd.novaSenha.length < 8) throw new Error("A nova senha deve ter ao menos 8 caracteres.");
       if (pwd.novaSenha !== pwd.confirmar) throw new Error("A confirmação não confere.");
       await changePassword({ senhaAtual: pwd.senhaAtual, novaSenha: pwd.novaSenha });
       setPwd({ senhaAtual: "", novaSenha: "", confirmar: "" });

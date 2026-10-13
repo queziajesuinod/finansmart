@@ -22,8 +22,8 @@ async function register(req, res, next) {
     if (!nome?.trim() || !emailNorm || !senha) {
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios.", code: "missing_fields" });
     }
-    if (String(senha).length < 6) {
-      return res.status(400).json({ error: "A senha deve ter ao menos 6 caracteres.", code: "weak_password" });
+    if (String(senha).length < 8) {
+      return res.status(400).json({ error: "A senha deve ter ao menos 8 caracteres.", code: "weak_password" });
     }
 
     const existe = await User.findOne({ where: { email: emailNorm } });
@@ -130,8 +130,8 @@ async function updateProfile(req, res, next) {
 async function changePassword(req, res, next) {
   try {
     const { senhaAtual, novaSenha } = req.body || {};
-    if (!novaSenha || String(novaSenha).length < 6) {
-      return res.status(400).json({ error: "A nova senha deve ter ao menos 6 caracteres.", code: "weak_password" });
+    if (!novaSenha || String(novaSenha).length < 8) {
+      return res.status(400).json({ error: "A nova senha deve ter ao menos 8 caracteres.", code: "weak_password" });
     }
     const user = req.user;
     if (user.senhaHash) {

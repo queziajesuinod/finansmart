@@ -11,6 +11,7 @@ module.exports = (sequelize, DataTypes) => {
       bandeira: { type: DataTypes.STRING, allowNull: true },
       limite: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
       vencimentoDia: { type: DataTypes.INTEGER, allowNull: true },
+      fechamentoDia: { type: DataTypes.INTEGER, allowNull: true }, // dia em que a fatura fecha ("vira")
       finais: { type: DataTypes.STRING, allowNull: true }, // 4 últimos dígitos
       ativo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     },

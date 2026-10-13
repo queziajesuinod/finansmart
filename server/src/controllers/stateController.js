@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro, Holerite, RendaExtra, GlobalCategoryRule, ImportLog } = require("../models");
+const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro, Holerite, RendaExtra, GlobalCategoryRule, ImportLog, Investimento, DataRev } = require("../models");
 const { getSetting } = require("../services/settings");
 
 // Garante que o usuário tenha um membro "principal" (criado a partir do nome
@@ -22,13 +22,36 @@ const num = (v) => {
 const int = (v) => Math.trunc(num(v));
 const dateOrNull = (v) => (v ? String(v).slice(0, 10) : null);
 const bool = (v) => Boolean(v);
+// Dia do mês (1–31) ou null.
+const diaOuNull = (v) => { const d = int(v); return d >= 1 && d <= 31 ? d : null; };
+
+// ─── Revisão por coleção (concorrência entre aparelhos) ──────
+// O cliente manda em X-Data-Rev a revisão que carregou. Se outro aparelho já
+// salvou a mesma coleção depois disso, respondemos 409 em vez de sobrescrever.
+// Sem o cabeçalho (cliente antigo em cache) o PUT é aceito como antes. O lock
+// na linha também enfileira PUTs simultâneos da mesma coleção.
+async function conferirRev(req, colecao, transaction) {
+  const userId = req.user.id;
+  await DataRev.bulkCreate([{ userId, colecao, rev: 0 }], { ignoreDuplicates: true, transaction });
+  const row = await DataRev.findOne({ where: { userId, colecao }, transaction, lock: transaction.LOCK.UPDATE });
+  const enviada = req.get("X-Data-Rev");
+  if (enviada != null && enviada !== "" && Number(enviada) !== row.rev) {
+    const err = new Error("Estes dados foram alterados em outro aparelho. Recarregue para ver a versão mais recente.");
+    err.status = 409;
+    err.code = "stale_data";
+    throw err;
+  }
+  row.rev += 1;
+  await row.save({ transaction });
+  return row.rev;
+}
 
 // ─── GET /api/state — carrega tudo do usuário em uma chamada ──
 async function getState(req, res, next) {
   try {
     const userId = req.user.id;
     await ensurePrincipal(userId, req.user.nome);
-    const [incomes, despesas, emprestimos, parcelados, cartoes, goals, rules, profiles, membros, holerites, rendasExtras, globalRules] = await Promise.all([
+    const [incomes, despesas, emprestimos, parcelados, cartoes, goals, rules, profiles, membros, holerites, rendasExtras, globalRules, investimentos, revs] = await Promise.all([
       Income.findAll({ where: { userId } }),
       Despesa.findAll({ where: { userId } }),
       Emprestimo.findAll({ where: { userId } }),
@@ -43,11 +66,22 @@ async function getState(req, res, next) {
       // Resiliente: se a migração 030 ainda não rodou, degrada p/ vazio em vez de
       // derrubar o getState (que é o carregamento do app inteiro).
       GlobalCategoryRule.findAll().catch(() => []),
+      // Resiliente: se a migração 033 ainda não rodou, degrada p/ vazio.
+      Investimento.findAll({ where: { userId } }).catch(() => []),
+      // Resiliente: se a migração 034 ainda não rodou, segue sem revisões.
+      DataRev.findAll({ where: { userId } }).catch(() => []),
     ]);
 
     res.json({
-      holerites: holerites.map((h) => ({ id: h.id, membroId: h.membroId || null, mesRef: h.mesRef, titulo: h.titulo || "", salarioBruto: num(h.salarioBruto), salarioBase: num(h.salarioBase), diasTrabalhados: h.diasTrabalhados == null ? 30 : (Number(h.diasTrabalhados) || 30), descontos: Array.isArray(h.descontos) ? h.descontos : [], outrosRendimentos: Array.isArray(h.outrosRendimentos) ? h.outrosRendimentos : [], recorrente: h.recorrente !== false })),
-      rendasExtras: rendasExtras.map((r) => ({ id: r.id, membroId: r.membroId || null, mesRef: r.mesRef, descricao: r.descricao || "", valor: num(r.valor), recorrente: r.recorrente === true })),
+      revs: Object.fromEntries(revs.map((r) => [r.colecao, r.rev])),
+      holerites: holerites.map((h) => ({ id: h.id, membroId: h.membroId || null, mesRef: h.mesRef, titulo: h.titulo || "", salarioBruto: num(h.salarioBruto), salarioBase: num(h.salarioBase), diasTrabalhados: h.diasTrabalhados == null ? 30 : (Number(h.diasTrabalhados) || 30), descontos: Array.isArray(h.descontos) ? h.descontos : [], outrosRendimentos: Array.isArray(h.outrosRendimentos) ? h.outrosRendimentos : [], recorrente: h.recorrente !== false, diaRecebimento: h.diaRecebimento || null })),
+      rendasExtras: rendasExtras.map((r) => ({ id: r.id, membroId: r.membroId || null, mesRef: r.mesRef, descricao: r.descricao || "", valor: num(r.valor), recorrente: r.recorrente === true, data: r.data || null })),
+      investimentos: investimentos.map((v) => ({
+        id: v.id, instituicao: v.instituicao, nome: v.nome || "", tipo: v.tipo === "RV" ? "RV" : "RF",
+        indexador: v.indexador || null, percentual: v.percentual == null ? null : num(v.percentual),
+        valorAplicado: num(v.valorAplicado), dataAplicacao: v.dataAplicacao, membroId: v.membroId || null,
+        historico: Array.isArray(v.historico) ? v.historico : [],
+      })),
       membros: membros.map((m) => ({ id: m.id, nome: m.nome, tipo: m.tipo, parentesco: m.parentesco, cor: m.cor, ordem: m.ordem, ativo: m.ativo })),
       incomes: incomes.map((i) => ({ ano: i.ano, mes: i.mes, renda: num(i.renda), extra: num(i.extra) })),
       despesas: despesas.map((d) => ({ id: d.id, descricao: d.descricao, valor: num(d.valor), categoria: d.categoria, data: d.data, fixo: d.fixo, ano: d.ano, mes: d.mes, membroId: d.membroId || null })),
@@ -57,12 +91,13 @@ async function getState(req, res, next) {
         taxa: num(e.taxa), taxaPeriodo: e.taxaPeriodo === "anual" ? "anual" : "mensal",
         parcelas: e.parcelas, pago: e.pago, pagoAuto: e.pagoAuto,
         dataContratacao: e.dataContratacao, dataPrimeira: e.dataPrimeira, dataQuitacao: e.dataQuitacao,
+        diaVencimento: e.diaVencimento || null,
         membroId: e.membroId || null,
         amortizacoes: Array.isArray(e.amortizacoes) ? e.amortizacoes : [],
       })),
       parcelados: parcelados.map((p) => ({
         id: p.id, descricao: p.descricao, valorTotal: num(p.valorTotal), totalParcelas: p.totalParcelas,
-        parcelaAtual: p.parcelaAtual, valorParcela: num(p.valorParcela), dataCompra: p.dataCompra,
+        parcelaAtual: p.parcelaAtual, valorParcela: num(p.valorParcela), dataCompra: p.dataCompra, dataCompraReal: p.dataCompraReal || null,
         categoria: p.categoria, origem: p.origem, cartaoId: p.cartaoId, membroId: p.membroId || null,
         pagas: Array.isArray(p.pagas) ? p.pagas : [],
       })),
@@ -81,7 +116,7 @@ async function getState(req, res, next) {
       globalCategoryRules: Object.fromEntries(globalRules.map((r) => [r.chave, r.categoria])),
       // Aviso global (banner) configurável pelo admin em app_settings.
       avisoGlobal: (await getSetting("avisoGlobal", "")) || "",
-      cardProfiles: profiles.map((p) => ({ id: p.id, nome: p.nome, banco: p.banco, bandeira: p.bandeira, limite: num(p.limite), vencimentoDia: p.vencimentoDia, finais: p.finais, ativo: p.ativo })),
+      cardProfiles: profiles.map((p) => ({ id: p.id, nome: p.nome, banco: p.banco, bandeira: p.bandeira, limite: num(p.limite), vencimentoDia: p.vencimentoDia, fechamentoDia: p.fechamentoDia || null, finais: p.finais, ativo: p.ativo })),
     });
   } catch (err) {
     next(err);
@@ -97,11 +132,12 @@ function replaceAll(Model, mapRow) {
     const items = Array.isArray(req.body) ? req.body : [];
     const t = await sequelize.transaction();
     try {
+      const rev = await conferirRev(req, Model.tableName, t);
       await Model.destroy({ where: { userId }, transaction: t });
       const rows = items.map((it) => ({ ...mapRow(it), userId }));
       if (rows.length) await Model.bulkCreate(rows, { transaction: t });
       await t.commit();
-      res.json({ ok: true, total: rows.length });
+      res.json({ ok: true, total: rows.length, rev });
     } catch (err) {
       await t.rollback();
       next(err);
@@ -125,18 +161,25 @@ const putEmprestimos = replaceAll(Emprestimo, (e) => ({
   taxa: num(e.taxa), taxaPeriodo: e.taxaPeriodo === "anual" ? "anual" : "mensal",
   parcelas: int(e.parcelas), pago: int(e.pago), pagoAuto: bool(e.pagoAuto),
   dataContratacao: dateOrNull(e.dataContratacao), dataPrimeira: dateOrNull(e.dataPrimeira), dataQuitacao: dateOrNull(e.dataQuitacao),
+  diaVencimento: diaOuNull(e.diaVencimento),
   membroId: membroIdOrNull(e.membroId),
   amortizacoes: Array.isArray(e.amortizacoes)
     ? e.amortizacoes
-        .map((a) => ({ id: a.id || crypto.randomUUID(), data: dateOrNull(a.data), valor: num(a.valor), tipo: a.tipo === "parcela" ? "parcela" : "prazo", parcela: int(a.parcela) || 0 }))
-        .filter((a) => a.valor > 0)
+        .map((a) => ({
+          id: a.id || crypto.randomUUID(), data: dateOrNull(a.data), valor: num(a.valor), tipo: a.tipo === "parcela" ? "parcela" : "prazo", parcela: int(a.parcela) || 0,
+          // Valores informados pelo banco (opcionais): substituem o cálculo automático.
+          ...(num(a.novoSaldo) > 0 ? { novoSaldo: num(a.novoSaldo) } : {}),
+          ...(num(a.novaParcela) > 0 ? { novaParcela: num(a.novaParcela) } : {}),
+          ...(int(a.novoPrazo) > 0 ? { novoPrazo: int(a.novoPrazo) } : {}),
+        }))
+        .filter((a) => a.valor > 0 || a.novoSaldo || a.novaParcela || a.novoPrazo)
     : [],
 }));
 
 // cartaoId é ignorado no persist (referência vem de ids do frontend, não UUIDs).
 const putParcelados = replaceAll(Parcelado, (p) => ({
   descricao: p.descricao, valorTotal: num(p.valorTotal), totalParcelas: int(p.totalParcelas),
-  parcelaAtual: int(p.parcelaAtual), valorParcela: num(p.valorParcela), dataCompra: dateOrNull(p.dataCompra),
+  parcelaAtual: int(p.parcelaAtual), valorParcela: num(p.valorParcela), dataCompra: dateOrNull(p.dataCompra), dataCompraReal: dateOrNull(p.dataCompraReal),
   categoria: p.categoria || "outros", origem: p.origem || null, cartaoId: null,
   membroId: membroIdOrNull(p.membroId),
   pagas: Array.isArray(p.pagas) ? [...new Set(p.pagas.map((x) => int(x)).filter((x) => x >= 1))] : [],
@@ -151,10 +194,23 @@ const putHolerites = replaceAll(Holerite, (h) => ({
   diasTrabalhados: Math.min(31, Math.max(1, int(h.diasTrabalhados) || 30)),
   descontos: linhasValor(h.descontos), outrosRendimentos: linhasValor(h.outrosRendimentos),
   recorrente: h.recorrente !== false,
+  diaRecebimento: diaOuNull(h.diaRecebimento),
 }));
 
 const putRendasExtras = replaceAll(RendaExtra, (r) => ({
   membroId: membroIdOrNull(r.membroId), mesRef: String(r.mesRef || ""), descricao: r.descricao || null, valor: num(r.valor), recorrente: r.recorrente === true,
+  data: dateOrNull(r.data),
+}));
+
+const putInvestimentos = replaceAll(Investimento, (v) => ({
+  instituicao: v.instituicao || "Investimento", nome: v.nome || null, tipo: v.tipo === "RV" ? "RV" : "RF",
+  indexador: v.tipo === "RV" ? null : (v.indexador ? String(v.indexador).slice(0, 12) : null),
+  percentual: v.tipo === "RV" || v.percentual == null || v.percentual === "" ? null : num(v.percentual),
+  valorAplicado: num(v.valorAplicado), dataAplicacao: dateOrNull(v.dataAplicacao),
+  membroId: membroIdOrNull(v.membroId),
+  historico: Array.isArray(v.historico)
+    ? v.historico.map((h) => ({ mesRef: String(h.mesRef || "").slice(0, 7), saldo: num(h.saldo) })).filter((h) => /^\d{4}-\d{2}$/.test(h.mesRef))
+    : [],
 }));
 
 // Membros (familiares). Diferente do replaceAll genérico: PRESERVA o id vindo do
@@ -164,6 +220,7 @@ async function putMembros(req, res, next) {
   const items = Array.isArray(req.body) ? req.body : [];
   const t = await sequelize.transaction();
   try {
+    const rev = await conferirRev(req, "membros", t);
     await Membro.destroy({ where: { userId }, transaction: t });
     let temPrincipal = false;
     const rows = items.map((m, i) => {
@@ -187,7 +244,7 @@ async function putMembros(req, res, next) {
     if (rows.length) await Membro.bulkCreate(rows, { transaction: t });
     await t.commit();
     const saved = await Membro.findAll({ where: { userId }, order: [["ordem", "ASC"], ["nome", "ASC"]] });
-    res.json({ ok: true, membros: saved.map((m) => ({ id: m.id, nome: m.nome, tipo: m.tipo, parentesco: m.parentesco, cor: m.cor, ordem: m.ordem, ativo: m.ativo })) });
+    res.json({ ok: true, rev, membros: saved.map((m) => ({ id: m.id, nome: m.nome, tipo: m.tipo, parentesco: m.parentesco, cor: m.cor, ordem: m.ordem, ativo: m.ativo })) });
   } catch (err) {
     await t.rollback();
     next(err);
@@ -199,6 +256,7 @@ const putGoals = replaceAll(Goal, (g) => ({ nome: g.nome, alvo: num(g.alvo), atu
 const putCardProfiles = replaceAll(CardProfile, (p) => ({
   nome: p.nome, banco: p.banco || null, bandeira: p.bandeira || null, limite: num(p.limite),
   vencimentoDia: p.vencimentoDia ? int(p.vencimentoDia) : null,
+  fechamentoDia: diaOuNull(p.fechamentoDia),
   finais: p.finais ? String(p.finais).replace(/\D/g, "").slice(-4) : null,
   ativo: p.ativo !== false,
 }));
@@ -209,6 +267,7 @@ async function putCartoes(req, res, next) {
   const items = Array.isArray(req.body) ? req.body : [];
   const t = await sequelize.transaction();
   try {
+    const rev = await conferirRev(req, "cartoes", t);
     await Cartao.destroy({ where: { userId }, transaction: t }); // cascata apaga compras
     for (const c of items) {
       const cartao = await Cartao.create(
@@ -232,7 +291,7 @@ async function putCartoes(req, res, next) {
       if (compras.length) await Compra.bulkCreate(compras, { transaction: t });
     }
     await t.commit();
-    res.json({ ok: true, total: items.length });
+    res.json({ ok: true, total: items.length, rev });
   } catch (err) {
     await t.rollback();
     next(err);
@@ -245,13 +304,14 @@ async function putCategoryRules(req, res, next) {
   const map = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
   const t = await sequelize.transaction();
   try {
+    const rev = await conferirRev(req, "category_rules", t);
     await CategoryRule.destroy({ where: { userId }, transaction: t });
     const rows = Object.entries(map)
       .filter(([k, v]) => k && v)
       .map(([chave, categoria]) => ({ userId, chave: String(chave).slice(0, 60), categoria: String(categoria) }));
     if (rows.length) await CategoryRule.bulkCreate(rows, { transaction: t });
     await t.commit();
-    res.json({ ok: true, total: rows.length });
+    res.json({ ok: true, total: rows.length, rev });
   } catch (err) {
     await t.rollback();
     next(err);
@@ -284,4 +344,4 @@ async function postImportLog(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras, postImportLog };
+module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras, putInvestimentos, postImportLog };

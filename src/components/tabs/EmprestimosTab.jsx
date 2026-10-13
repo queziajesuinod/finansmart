@@ -1,20 +1,21 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { C, fmt, fmtPct, genId, todayStr, tint } from "../../lib/constants";
-import { SISTEMAS, normSistema, calcParcela, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao, resumoEmprestimo, taxaMensalParaAnual, taxaAnualParaMensal, emprestimoEstado, emprestimoRows } from "../../lib/finance";
+import { SISTEMAS, normSistema, calcParcela, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao, resumoEmprestimo, taxaMensalParaAnual, taxaAnualParaMensal, emprestimoEstado, emprestimoRows, diaVencimentoEmprestimo } from "../../lib/finance";
 import { Card, Label, Field, Inp, Btn, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { Pencil, Trash2, Scale, TrendingDown, ReceiptText, BanknoteArrowDown, Check, Save, CircleCheck, Siren, RefreshCw, X } from "../../lib/icons.jsx";
 import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
 export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = [] }) {
-  const EMPTY = { instituicao: "", contrato: "", sistema: "PRICE", valorContratado: "", taxa: "", taxaPeriodo: "mensal", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", parcelas: "", pago: "0", pagoAuto: true, membroId: null };
+  const EMPTY = { instituicao: "", contrato: "", sistema: "PRICE", valorContratado: "", taxa: "", taxaPeriodo: "mensal", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", diaVencimento: "", parcelas: "", pago: "0", pagoAuto: true, membroId: null };
   const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [detail, setDetail] = useState(null);
   const [filtroMembro, setFiltroMembro] = useState("todos");
   const [amortOpen, setAmortOpen] = useState(null);   // id do empréstimo com o form de aporte aberto
-  const [amortForm, setAmortForm] = useState({ valor: "", tipo: "prazo", parcela: "", data: "" });
+  const AMORT_VAZIO = { valor: "", tipo: "prazo", parcela: "", data: "", banco: false, novoSaldo: "", novaParcela: "", novoPrazo: "" };
+  const [amortForm, setAmortForm] = useState(AMORT_VAZIO);
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   const pv = parseFloat((form.valorContratado || "").replace(",", ".")) || 0;
@@ -44,7 +45,8 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
   function submit() {
     if (!form.instituicao || !pv || !n) return;
     // `taxa` armazenada é sempre MENSAL; taxaPeriodo guarda a unidade digitada.
-    const entry = { ...form, sistema, valorContratado: pv, taxa: round4(taxa), taxaPeriodo, parcelas: n, pago, pagoAuto, dataPrimeira: form.dataPrimeira, id: editId || genId() };
+    const diaV = parseInt(form.diaVencimento, 10);
+    const entry = { ...form, sistema, valorContratado: pv, taxa: round4(taxa), taxaPeriodo, parcelas: n, pago, pagoAuto, dataPrimeira: form.dataPrimeira, diaVencimento: diaV >= 1 && diaV <= 31 ? diaV : null, id: editId || genId() };
     if (editId) setEmprestimos(emprestimos.map((e) => (e.id === editId ? entry : e)));
     else setEmprestimos([...emprestimos, entry]);
     setForm(EMPTY); setEditId(null); setShowForm(false);
@@ -52,18 +54,29 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
   function startEdit(e) {
     const periodo = e.taxaPeriodo === "anual" ? "anual" : "mensal";
     const taxaStr = periodo === "anual" ? String(round4(taxaMensalParaAnual(e.taxa))) : String(e.taxa);
-    setForm({ ...EMPTY, ...e, sistema: normSistema(e.sistema), valorContratado: String(e.valorContratado), taxa: taxaStr, taxaPeriodo: periodo, parcelas: String(e.parcelas), pago: String(e.pago), pagoAuto: e.pagoAuto !== false });
+    setForm({ ...EMPTY, ...e, sistema: normSistema(e.sistema), valorContratado: String(e.valorContratado), taxa: taxaStr, taxaPeriodo: periodo, parcelas: String(e.parcelas), pago: String(e.pago), pagoAuto: e.pagoAuto !== false, diaVencimento: e.diaVencimento ? String(e.diaVencimento) : "" });
     setEditId(e.id); setShowForm(true);
   }
   // ── Amortização extraordinária (aporte) ──
   function abrirAmort(emp, pagoEf) {
     setAmortOpen(amortOpen === emp.id ? null : emp.id);
-    setAmortForm({ valor: "", tipo: "prazo", parcela: String(Math.max(1, pagoEf || 1)), data: todayStr() });
+    setAmortForm({ ...AMORT_VAZIO, parcela: String(Math.max(1, pagoEf || 1)), data: todayStr() });
   }
   function addAmort(emp) {
     const valor = parseFloat((amortForm.valor || "").replace(",", ".")) || 0;
-    if (valor <= 0) return;
-    const item = { id: genId(), data: amortForm.data || todayStr(), valor, tipo: amortForm.tipo === "parcela" ? "parcela" : "prazo", parcela: Math.max(1, parseInt(amortForm.parcela) || 1) };
+    const dec = (v) => parseFloat(String(v || "").replace(",", ".")) || 0;
+    // Valores informados pelo banco (opcionais): substituem o cálculo automático.
+    const banco = amortForm.banco
+      ? { novoSaldo: dec(amortForm.novoSaldo), novaParcela: dec(amortForm.novaParcela), novoPrazo: Math.max(0, parseInt(amortForm.novoPrazo) || 0) }
+      : { novoSaldo: 0, novaParcela: 0, novoPrazo: 0 };
+    const temBanco = banco.novoSaldo > 0 || banco.novaParcela > 0 || banco.novoPrazo > 0;
+    if (valor <= 0 && !temBanco) return;
+    const item = {
+      id: genId(), data: amortForm.data || todayStr(), valor, tipo: amortForm.tipo === "parcela" ? "parcela" : "prazo", parcela: Math.max(1, parseInt(amortForm.parcela) || 1),
+      ...(banco.novoSaldo > 0 ? { novoSaldo: banco.novoSaldo } : {}),
+      ...(banco.novaParcela > 0 ? { novaParcela: banco.novaParcela } : {}),
+      ...(banco.novoPrazo > 0 ? { novoPrazo: banco.novoPrazo } : {}),
+    };
     setEmprestimos(emprestimos.map((e) => (e.id === emp.id ? { ...e, amortizacoes: [...(e.amortizacoes || []), item] } : e)));
     setAmortOpen(null);
   }
@@ -155,6 +168,10 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
             <Field label="Data de Contratação"><Inp type="date" value={form.dataContratacao} onChange={f("dataContratacao")} /></Field>
             <Field label="Data da 1ª Parcela"><Inp type="date" value={form.dataPrimeira} onChange={f("dataPrimeira")} /></Field>
             <Field label="Data de Quitação (auto)"><Inp type="date" value={form.dataQuitacao} onChange={f("dataQuitacao")} style={{ background: "var(--fill-2)" }} /></Field>
+            <Field label="Dia de Vencimento das Parcelas" span={2}>
+              <Inp type="number" min={1} max={31} placeholder={form.dataPrimeira ? `Dia ${new Date(form.dataPrimeira + "T12:00:00").getDate()} (igual à 1ª parcela)` : "Ex: 20"} value={form.diaVencimento} onChange={f("diaVencimento")} style={{ maxWidth: 260 }} />
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 5, lineHeight: 1.4 }}>A parcela de cada mês aparece no Extrato nesta data. Em branco, vale o dia da 1ª parcela.</div>
+            </Field>
           </div>
           <MembroSelect membros={membros} value={form.membroId} onChange={(v) => setForm((p) => ({ ...p, membroId: v }))} label="De quem é este empréstimo?" style={{ marginBottom: 12 }} />
           <div style={{ background: "var(--fill-2)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
@@ -219,6 +236,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
         const isDetail = detail?.id === emp.id;
         const isAuto = emp.pagoAuto !== false && emp.dataPrimeira;
         const isAmort = amortOpen === emp.id;
+        const diaVenc = diaVencimentoEmprestimo(emp);
         return (
           <Card key={emp.id} style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
@@ -231,6 +249,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
                 {emp.contrato && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Contrato: {emp.contrato}</div>}
                 {emp.dataPrimeira && <div style={{ fontSize: 11, color: C.muted }}>1ª parcela: {new Date(emp.dataPrimeira + "T12:00:00").toLocaleDateString("pt-BR")}</div>}
                 {emp.dataQuitacao && <div style={{ fontSize: 11, color: C.muted }}>Quitação: {new Date(emp.dataQuitacao + "T12:00:00").toLocaleDateString("pt-BR")}</div>}
+                {diaVenc && <div style={{ fontSize: 11, color: C.muted }}>Vencimento: todo dia {diaVenc}</div>}
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <button onClick={() => abrirAmort(emp, pagoEf)} style={{ padding: "4px 9px", background: tint(C.emerald, 12), border: `1px solid ${tint(C.emerald, 26)}`, borderRadius: 7, color: C.emerald, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{isAmort ? "Fechar" : "Amortizar"}</button>
@@ -278,6 +297,20 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
                   <Field label="Após a parcela nº"><Inp type="number" min={1} max={emp.parcelas} value={amortForm.parcela} onChange={(e) => setAmortForm((p) => ({ ...p, parcela: e.target.value }))} /></Field>
                 </div>
                 <div style={{ fontSize: 10.5, color: C.muted, margin: "6px 0 10px", lineHeight: 1.4 }}>{amortForm.tipo === "parcela" ? "Mantém o número de parcelas e reduz o valor de cada uma." : "Mantém o valor da parcela e antecipa a quitação (menos parcelas)."}</div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: amortForm.banco ? 10 : 12 }}>
+                  <input type="checkbox" checked={!!amortForm.banco} onChange={(e) => setAmortForm((p) => ({ ...p, banco: e.target.checked }))} />
+                  <span style={{ fontSize: 12, color: C.subtle }}>O cálculo não bateu com o banco — informar os valores do banco</span>
+                </label>
+                {amortForm.banco && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div className="form-grid-2">
+                      <Field label="Novo saldo devedor (R$)"><MoneyInput placeholder="0,00" value={amortForm.novoSaldo} onChange={(e) => setAmortForm((p) => ({ ...p, novoSaldo: e.target.value }))} /></Field>
+                      <Field label={empSAC ? "Nova parcela (R$) — não se aplica ao SAC" : "Nova parcela (R$)"}><MoneyInput placeholder="0,00" disabled={empSAC} value={amortForm.novaParcela} onChange={(e) => setAmortForm((p) => ({ ...p, novaParcela: e.target.value }))} /></Field>
+                      <Field label="Novo prazo (parcelas restantes)"><Inp type="number" min={1} placeholder="Ex: 300" value={amortForm.novoPrazo} onChange={(e) => setAmortForm((p) => ({ ...p, novoPrazo: e.target.value }))} /></Field>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: C.muted, marginTop: 6, lineHeight: 1.4 }}>Preencha só o que o banco informou. Esses valores substituem o cálculo automático a partir deste aporte.</div>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <Btn variant="success" onClick={() => addAmort(emp)} style={{ flex: 1 }}><IcoTxt Icon={Check}>Lançar aporte</IcoTxt></Btn>
                   <Btn variant="ghost" onClick={() => setAmortOpen(null)}>Cancelar</Btn>
@@ -290,7 +323,7 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
                 {[...aportes].sort((a, b) => (a.parcela || 0) - (b.parcela || 0)).map((a) => (
                   <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 9, padding: "8px 11px", marginBottom: 6 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: C.emerald }}>{fmt(a.valor)}</span>
-                    <span style={{ fontSize: 10.5, color: C.muted }}>{a.tipo === "parcela" ? "reduz parcela" : "reduz prazo"} · após parc. {a.parcela}{a.data ? ` · ${new Date(a.data + "T12:00:00").toLocaleDateString("pt-BR")}` : ""}</span>
+                    <span style={{ fontSize: 10.5, color: C.muted }}>{a.tipo === "parcela" ? "reduz parcela" : "reduz prazo"} · após parc. {a.parcela}{a.data ? ` · ${new Date(a.data + "T12:00:00").toLocaleDateString("pt-BR")}` : ""}{(a.novoSaldo || a.novaParcela || a.novoPrazo) ? ` · banco: ${[a.novoSaldo ? `saldo ${fmt(a.novoSaldo)}` : "", a.novaParcela ? `parcela ${fmt(a.novaParcela)}` : "", a.novoPrazo ? `${a.novoPrazo} parcelas` : ""].filter(Boolean).join(", ")}` : ""}</span>
                     <button className="mini-act" aria-label="Remover aporte" onClick={() => removeAmort(emp, a.id)} style={{ marginLeft: "auto", padding: "4px 7px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 7, color: C.red, cursor: "pointer" }}><Trash2 size={12} /></button>
                   </div>
                 ))}

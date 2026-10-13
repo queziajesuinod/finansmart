@@ -5,7 +5,7 @@
 // Os benefícios contam na renda fixa.
 import { useState } from "react";
 import { Card, MoneyInput, Btn, Label, Inp } from "./ui";
-import { C, fmt, genId, mesRefDe, holeritesVigentes, rendaHolerite, totalOutrosRendimentos, rendasExtrasDoMes, MONTH_NAMES } from "../lib/constants";
+import { C, fmt, genId, mesRefDe, holeritesVigentes, rendaHolerite, totalOutrosRendimentos, rendasExtrasDoMes, MONTH_NAMES, todayStr } from "../lib/constants";
 import { membrosOrdenados, principalId, principalDe } from "./Membros.jsx";
 import { ScrollText, Wallet, Plus, Trash2, X, Check, Pencil } from "../lib/icons.jsx";
 
@@ -17,6 +17,11 @@ function labelMesRef(ref) {
   if (!y || !m || !MONTH_NAMES[m - 1]) return "";
   return `${MONTH_NAMES[m - 1].slice(0, 3).toLowerCase()}/${y}`;
 }
+
+// Dia do mês válido (1–31) ou null.
+const diaValido = (v) => { const d = parseInt(v, 10); return d >= 1 && d <= 31 ? d : null; };
+// "2026-06-05" → "05/06"
+const diaMes = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : "");
 
 function LinhaValor({ item, onNome, onValor, onRemover, placeholder }) {
   return (
@@ -49,7 +54,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
 
   // ── Holerite ──────────────────────────────────────────────
   function novoHolerite(key) {
-    setEditH({ id: genId(), membroId: key, mesRef: mr, titulo: "", salarioBase: "", diasTrabalhados: "30", salarioBruto: "", descontos: [{ nome: "INSS", valor: "" }, { nome: "IRPF", valor: "" }], outrosRendimentos: [], recorrente: true, _novo: true });
+    setEditH({ id: genId(), membroId: key, mesRef: mr, titulo: "", salarioBase: "", diasTrabalhados: "30", salarioBruto: "", descontos: [{ nome: "INSS", valor: "" }, { nome: "IRPF", valor: "" }], outrosRendimentos: [], recorrente: true, diaRecebimento: "", _novo: true });
   }
   function editarHolerite(h) {
     // Holerite herdado (de um mês anterior): editar num mês posterior cria uma
@@ -65,6 +70,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
       _origem: herdado ? h.mesRef : null,
       salarioBase: temBase ? String(h.salarioBase) : (h.salarioBruto ? String(h.salarioBruto) : ""),
       diasTrabalhados: h.diasTrabalhados ? String(h.diasTrabalhados) : "30",
+      diaRecebimento: h.diaRecebimento ? String(h.diaRecebimento) : "",
       salarioBruto: h.salarioBruto ? String(h.salarioBruto) : "",
       descontos: (h.descontos || []).map((d) => ({ nome: d.nome || "", valor: d.valor != null ? String(d.valor) : "" })),
       outrosRendimentos: (h.outrosRendimentos || []).map((d) => ({ nome: d.nome || "", valor: d.valor != null ? String(d.valor) : "" })),
@@ -84,6 +90,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
       descontos: (editH.descontos || []).map((d) => ({ nome: (d.nome || "").trim(), valor: n(d.valor) })).filter((d) => d.nome || d.valor),
       outrosRendimentos: (editH.outrosRendimentos || []).map((d) => ({ nome: (d.nome || "").trim(), valor: n(d.valor) })).filter((d) => d.nome || d.valor),
       recorrente: editH.recorrente !== false,
+      diaRecebimento: diaValido(editH.diaRecebimento),
     };
     setHolerites([...(holerites || []).filter((x) => x.id !== h.id), h]);
     setEditH(null);
@@ -92,10 +99,12 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
 
   // ── Renda extra ───────────────────────────────────────────
   function salvarExtra() {
-    const ex = { id: extraForm.id || genId(), membroId: extraForm.membroId || null, mesRef: extraForm.mesRef || mr, descricao: (extraForm.descricao || "").trim() || "Renda extra", valor: n(extraForm.valor), recorrente: extraForm.recorrente === true };
+    const ex = { id: extraForm.id || genId(), membroId: extraForm.membroId || null, mesRef: extraForm.mesRef || mr, descricao: (extraForm.descricao || "").trim() || "Renda extra", valor: n(extraForm.valor), recorrente: extraForm.recorrente === true, data: extraForm.data || null };
     setRendasExtras([...(rendasExtras || []).filter((x) => x.id !== ex.id), ex]);
     setExtraForm(null);
   }
+  // Data sugerida para uma renda extra nova: hoje, se o mês exibido é o atual; senão dia 1.
+  const dataPadraoExtra = () => (todayStr().slice(0, 7) === mr ? todayStr() : `${mr}-01`);
   function removerExtra(id) { setRendasExtras((rendasExtras || []).filter((x) => x.id !== id)); }
 
   // Salário do mês = base × dias/30 (proporcional). Mês cheio (≥30 dias) = base.
@@ -141,6 +150,10 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
           <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 12, lineHeight: 1.4 }}>
             {baseEdit > 0 && diasEdit < 30 ? `Proporcional aos dias: ${fmt(baseEdit)} × ${diasEdit}/30 = ${fmt(salarioMesEdit)}. Férias/13º entram em "outros rendimentos".` : "Mês cheio = 30 dias. Reduza em meses de férias, admissão ou rescisão."}
           </div>
+
+          <Label>Dia do recebimento</Label>
+          <Inp type="number" min={1} max={31} placeholder="Ex.: 5" value={editH.diaRecebimento || ""} onChange={(e) => setEditH({ ...editH, diaRecebimento: e.target.value })} style={{ marginBottom: 4, maxWidth: 140 }} />
+          <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 12, lineHeight: 1.4 }}>Dia do mês em que este salário cai na conta. Aparece no Extrato e nas entradas por data.</div>
 
           <Label>Descontos</Label>
           {(editH.descontos || []).map((d, i) => (
@@ -202,7 +215,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: `color-mix(in srgb, ${C.emerald} 10%, transparent)`, color: C.emerald, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Wallet size={15} /></div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.titulo || "Holerite"}{h.recorrente === false ? " (só este mês)" : ""}{h.mesRef !== mr ? <span style={{ fontWeight: 600, color: C.accent }}> · desde {labelMesRef(h.mesRef)}</span> : null}</div>
-                  <div style={{ fontSize: 10, color: C.muted }}>{(h.diasTrabalhados && h.diasTrabalhados < 30 && Number(h.salarioBase) > 0) ? `base ${fmt(Number(h.salarioBase))} · ${h.diasTrabalhados} dias · ` : ""}salário {fmt(Number(h.salarioBruto) || 0)}{totalOutrosRendimentos(h) > 0 ? ` · benefícios ${fmt(totalOutrosRendimentos(h))}` : ""}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{h.diaRecebimento ? `recebe dia ${h.diaRecebimento} · ` : ""}{(h.diasTrabalhados && h.diasTrabalhados < 30 && Number(h.salarioBase) > 0) ? `base ${fmt(Number(h.salarioBase))} · ${h.diasTrabalhados} dias · ` : ""}salário {fmt(Number(h.salarioBruto) || 0)}{totalOutrosRendimentos(h) > 0 ? ` · benefícios ${fmt(totalOutrosRendimentos(h))}` : ""}</div>
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 800, color: C.emerald, flexShrink: 0 }}>{fmt(rendaHolerite(h))}</span>
                 <button onClick={() => editarHolerite(h)} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Pencil size={14} /></button>
@@ -213,8 +226,9 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
             {exs.map((r) => (
               <div key={r.id} style={{ background: "var(--fill-2)", borderRadius: 9, padding: "9px 11px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, border: `1px solid ${C.border}` }}>
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: `color-mix(in srgb, ${C.accent} 12%, transparent)`, color: C.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Plus size={15} /></div>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.descricao || "Renda extra"}{r.recorrente ? (r.mesRef !== mr ? <span style={{ color: C.accent }}> · desde {labelMesRef(r.mesRef)}</span> : <span style={{ color: C.muted }}> · mensal</span>) : null}</div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.descricao || "Renda extra"}{r.recorrente ? (r.mesRef !== mr ? <span style={{ color: C.accent }}> · desde {labelMesRef(r.mesRef)}</span> : <span style={{ color: C.muted }}> · mensal</span>) : null}{r.data ? <span style={{ color: C.muted, fontWeight: 500 }}> · {r.recorrente ? `dia ${String(r.data).slice(8, 10)}` : diaMes(r.data)}</span> : null}</div>
                 <span style={{ fontSize: 13, fontWeight: 800, color: C.accent, flexShrink: 0 }}>{fmt(Number(r.valor) || 0)}</span>
+                <button onClick={() => setExtraForm({ ...r, membroId: b.key, valor: String(r.valor), data: r.data || "" })} title="Editar" style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Pencil size={14} /></button>
                 <button onClick={() => removerExtra(r.id)} title="Excluir (para todos os meses)" style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", flexShrink: 0 }}><Trash2 size={14} /></button>
               </div>
             ))}
@@ -224,6 +238,10 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
                 <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                   <Inp placeholder="Descrição (ex.: freela)" value={extraForm.descricao} onChange={(e) => setExtraForm({ ...extraForm, descricao: e.target.value })} style={{ flex: 1, padding: "8px 10px", fontSize: 12 }} />
                   <MoneyInput placeholder="0,00" value={extraForm.valor} onChange={(e) => setExtraForm({ ...extraForm, valor: e.target.value })} style={{ width: 110, padding: "8px 10px", fontSize: 12 }} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>Data em que entrou</span>
+                  <Inp type="date" value={extraForm.data || ""} onChange={(e) => setExtraForm({ ...extraForm, data: e.target.value })} style={{ flex: 1, padding: "8px 10px", fontSize: 12 }} />
                 </div>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.subtle, marginBottom: 8, cursor: "pointer" }}>
                   <input type="checkbox" checked={extraForm.recorrente === true} onChange={(e) => setExtraForm({ ...extraForm, recorrente: e.target.checked })} />
@@ -238,7 +256,7 @@ export default function RendaMembros({ membros = [], holerites = [], setHolerite
 
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <button onClick={() => novoHolerite(b.key)} style={{ background: "transparent", border: `1px dashed ${C.border}`, color: C.accent, borderRadius: 8, padding: "7px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={13} /> Holerite</button>
-              <button onClick={() => setExtraForm({ membroId: b.key, descricao: "", valor: "" })} style={{ background: "transparent", border: `1px dashed ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={13} /> Renda extra</button>
+              <button onClick={() => setExtraForm({ membroId: b.key, descricao: "", valor: "", data: dataPadraoExtra() })} style={{ background: "transparent", border: `1px dashed ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={13} /> Renda extra</button>
             </div>
           </div>
         );

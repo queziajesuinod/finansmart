@@ -12,13 +12,22 @@ export function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); }
 export function clearToken() { localStorage.removeItem(TOKEN_KEY); }
 export const googleLoginUrl = `${API_URL}/auth/google`;
 
+// Revisão de cada coleção, como veio do servidor. Vai em X-Data-Rev nos PUTs de
+// /api/<coleção>; se outro aparelho salvou depois, o servidor responde 409
+// (code "stale_data") em vez de deixar este sobrescrever com dados antigos.
+const revs = {};
+let revsCarregadas = false;
+const chaveRev = (method, path) => (method === "PUT" && path.startsWith("/api/") ? path.slice(5).replace(/-/g, "_") : null);
+
 async function request(method, path, body) {
   const token = getToken();
+  const chave = chaveRev(method, path);
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(chave && revsCarregadas ? { "X-Data-Rev": String(revs[chave] ?? 0) } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -34,6 +43,7 @@ async function request(method, path, body) {
     if (res.status === 401) clearToken();
     throw err;
   }
+  if (chave && data && typeof data.rev === "number") revs[chave] = data.rev;
   return data;
 }
 
@@ -64,6 +74,9 @@ const numToInput = (n) => (n && Number(n) !== 0 ? String(n) : "");
 // Carrega tudo e converte para os formatos que o Dashboard já usa.
 export async function getState() {
   const s = await request("GET", "/api/state");
+  for (const k of Object.keys(revs)) delete revs[k];
+  Object.assign(revs, s.revs || {});
+  revsCarregadas = true;
 
   const incomes = {};
   for (const i of s.incomes || []) {
@@ -93,6 +106,7 @@ export async function getState() {
     membros: s.membros || [],
     holerites: s.holerites || [],
     rendasExtras: s.rendasExtras || [],
+    investimentos: s.investimentos || [],
   };
 }
 
@@ -131,6 +145,7 @@ export function saveCardProfiles(arr) { return request("PUT", "/api/card-profile
 export function saveMembros(arr) { return request("PUT", "/api/membros", arr || []); }
 export function saveHolerites(arr) { return request("PUT", "/api/holerites", arr || []); }
 export function saveRendasExtras(arr) { return request("PUT", "/api/rendas-extras", arr || []); }
+export function saveInvestimentos(arr) { return request("PUT", "/api/investimentos", arr || []); }
 
 // ─── Leitura de fatura com IA (reforço) ──────────────────────
 // Envia o texto já extraído do PDF (o PDF não sai do dispositivo) e recebe as

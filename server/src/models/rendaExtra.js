@@ -11,6 +11,7 @@ module.exports = (sequelize, DataTypes) => {
       descricao: { type: DataTypes.STRING, allowNull: true },
       valor: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
       recorrente: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // repete nos meses seguintes
+      data: { type: DataTypes.DATEONLY, allowNull: true }, // data em que entrou (recorrente: vale o dia)
     },
     { tableName: "rendas_extras", indexes: [{ fields: ["userId", "mesRef"] }] }
   );

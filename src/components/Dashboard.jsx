@@ -1,9 +1,11 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes, addMonths } from "../lib/constants";
-import { calcParcelasPagas, emprestimoEstado } from "../lib/finance";
+import { calcParcelasPagas, emprestimoEstado, parcelaEmprestimoNoMes } from "../lib/finance";
 import * as api from "../lib/api";
 import DashboardTab from "./tabs/DashboardTab.jsx";
+import ReceitasTab from "./tabs/ReceitasTab.jsx";
+import InvestimentosTab from "./tabs/InvestimentosTab.jsx";
 import LancamentosTab from "./tabs/LancamentosTab.jsx";
 import ExtratoTab from "./tabs/ExtratoTab.jsx";
 import CartoesTab from "./tabs/CartoesTab.jsx";
@@ -42,42 +44,76 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const [cardProfilesDB, setCardProfilesDB] = useState([]);
   const [holerites, setHolerites] = useState([]);
   const [rendasExtras, setRendasExtras] = useState([]);
+  const [investimentos, setInvestimentos] = useState([]);
   const [chat, setChat] = useState([{ role: "assistant", content: "Olá! Sou seu assistente financeiro. Posso analisar seus gastos, calcular dívidas, comparar meses e dar dicas práticas. Como posso te ajudar?" }]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [erroSync, setErroSync] = useState("");
   const [avisoGlobal, setAvisoGlobal] = useState("");
 
-  // Carrega tudo da API na montagem.
+  // Carrega tudo da API (na montagem e ao recarregar após um conflito).
+  const carregar = useCallback(async () => {
+    const s = await api.getState();
+    setIncomes(s.incomes);
+    setAllDespesas(s.despesas);
+    setMembros(s.membros || []);
+    setEmprestimos(s.emprestimos);
+    setGoals(s.goals);
+    setParcelados(s.parcelados);
+    setCartoes(s.cartoes);
+    setCategoryRules(s.categoryRules || {});
+    setGlobalCategoryRules(s.globalCategoryRules || {});
+    setAvisoGlobal(s.avisoGlobal || "");
+    setCardProfilesDB(s.cardProfiles || []);
+    setHolerites(s.holerites || []);
+    setRendasExtras(s.rendasExtras || []);
+    setInvestimentos(s.investimentos || []);
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
-        const s = await api.getState();
-        setIncomes(s.incomes);
-        setAllDespesas(s.despesas);
-        setMembros(s.membros || []);
-        setEmprestimos(s.emprestimos);
-        setGoals(s.goals);
-        setParcelados(s.parcelados);
-        setCartoes(s.cartoes);
-        setCategoryRules(s.categoryRules || {});
-        setGlobalCategoryRules(s.globalCategoryRules || {});
-        setAvisoGlobal(s.avisoGlobal || "");
-        setCardProfilesDB(s.cardProfiles || []);
-        setHolerites(s.holerites || []);
-        setRendasExtras(s.rendasExtras || []);
+        await carregar();
       } catch (e) {
         setErroSync("Não foi possível carregar seus dados do servidor.");
       } finally {
         setDataLoaded(true);
       }
     })();
-  }, []);
+  }, [carregar]);
 
-  // Salva otimista: atualiza a tela e sincroniza com a API.
-  const persist = useCallback((setter, saver) => async (v) => {
-    setter(v);
-    try { await saver(v); setErroSync(""); } catch { setErroSync("Falha ao salvar no servidor. Verifique sua conexão."); }
-  }, []);
+  // Salva otimista: atualiza a tela e sincroniza com a API. Cada coleção tem a sua
+  // fila — só um PUT por vez, sempre com o valor mais recente — para os salvamentos
+  // não chegarem fora de ordem. Se o servidor recusar por dados desatualizados
+  // (outro aparelho salvou antes), recarrega tudo em vez de sobrescrever.
+  const persist = useCallback((setter, saver) => {
+    const fila = { rodando: false, tem: false, valor: undefined };
+    const drenar = async () => {
+      fila.rodando = true;
+      while (fila.tem) {
+        const v = fila.valor;
+        fila.tem = false;
+        try {
+          await saver(v);
+          setErroSync("");
+        } catch (e) {
+          if (e && e.code === "stale_data") {
+            fila.tem = false;
+            try { await carregar(); } catch { /* mantém a tela atual */ }
+            setErroSync("Seus dados foram alterados em outro aparelho. Recarregamos a versão mais recente — refaça a última alteração.");
+          } else {
+            setErroSync("Falha ao salvar no servidor. Verifique sua conexão.");
+          }
+        }
+      }
+      fila.rodando = false;
+    };
+    return (v) => {
+      setter(v);
+      fila.valor = v;
+      fila.tem = true;
+      if (!fila.rodando) drenar();
+    };
+  }, [carregar]);
 
   const saveMembros = useCallback(persist(setMembros, api.saveMembros), [persist]);
   const saveIncomes = useCallback(persist(setIncomes, api.saveIncomes), [persist]);
@@ -90,6 +126,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const saveCardProfiles = useCallback(persist(setCardProfilesDB, api.saveCardProfiles), [persist]);
   const saveHolerites = useCallback(persist(setHolerites, api.saveHolerites), [persist]);
   const saveRendasExtras = useCallback(persist(setRendasExtras, api.saveRendasExtras), [persist]);
+  const saveInvestimentos = useCallback(persist(setInvestimentos, api.saveInvestimentos), [persist]);
 
   // Salva a lista de membros e, se algum dependente foi REMOVIDO, joga os
   // lançamentos dele de volta para o principal (membroId = null) em todas as
@@ -111,14 +148,46 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
       }
       if ((holerites || []).some((h) => orfao(h.membroId))) saveHolerites(holerites.map((h) => (orfao(h.membroId) ? { ...h, membroId: null } : h)));
       if ((rendasExtras || []).some((r) => orfao(r.membroId))) saveRendasExtras(rendasExtras.map((r) => (orfao(r.membroId) ? { ...r, membroId: null } : r)));
+      if ((investimentos || []).some((v) => orfao(v.membroId))) saveInvestimentos(investimentos.map((v) => (orfao(v.membroId) ? { ...v, membroId: null } : v)));
     }
     saveMembros(novaLista);
-  }, [membros, allDespesas, emprestimos, parcelados, cartoes, holerites, rendasExtras, saveDespesas, saveEmprestimos, saveParcelados, saveCartoes, saveHolerites, saveRendasExtras, saveMembros]);
+  }, [membros, allDespesas, emprestimos, parcelados, cartoes, holerites, rendasExtras, investimentos, saveDespesas, saveEmprestimos, saveParcelados, saveCartoes, saveHolerites, saveRendasExtras, saveInvestimentos, saveMembros]);
 
   const income = incomes[mk] || { renda: "", extra: "" };
   const despesas = allDespesas[mk] || [];
   const setIncome = (k, v) => saveIncomes({ ...incomes, [mk]: { ...income, [k]: v } });
   const setDespesasMk = (fn) => { const next = typeof fn === "function" ? fn(despesas) : fn; saveDespesas({ ...allDespesas, [mk]: next }); };
+
+  // ─── Totais de um mês qualquer (mês exibido e Histórico usam a mesma conta) ───
+  const rendaNoMes = (y, m) =>
+    holeritesVigentes(holerites, y, m).reduce((s, h) => s + rendaHolerite(h), 0) +
+    rendasExtrasDoMes(rendasExtras, y, m).reduce((s, r) => s + (Number(r.valor) || 0), 0);
+  const parcelasEmprestimosNoMes = (y, m) => emprestimos.reduce((s, e) => {
+    const p = parcelaEmprestimoNoMes(e, y, m);
+    return s + (p ? p.valor : 0);
+  }, 0);
+  // Parcelas da aba Parcelados. IMPORTANTE: se a parcela já está numa fatura de
+  // cartão importada DAQUELE mês (o total da fatura já a inclui), não somamos de
+  // novo — evita contar em dobro. Nos meses sem fatura (retroativos/futuros) a
+  // parcela conta normalmente como projeção.
+  const parcelasAvulsasNoMes = (y, m) => {
+    const cartoesMes = (cartoes || []).filter((c) => c.mesRef === `${y}-${m}`);
+    const ref = new Date(y, m, 1);
+    const refFim = new Date(y, m + 1, 0);
+    return parcelados.reduce((s, p) => {
+      const ini = new Date(p.dataCompra + "T12:00:00");
+      const fim = addMonths(p.dataCompra, p.totalParcelas - 1);
+      if (!(ini <= refFim && fim >= ref)) return s; // não ativa neste mês
+      const jaNaFatura = cartoesMes.some((c) =>
+        (c.compras || []).some((x) => x.parcelas > 1 && x.parcelas === p.totalParcelas && Math.abs((x.valor || 0) - p.valorParcela) < 0.01)
+      );
+      return jaNaFatura ? s : s + p.valorParcela;
+    }, 0);
+  };
+  // Regime de CAIXA: o cartão pesa no gasto do mês pelo que foi PAGO (valorPago).
+  // Fatura ainda não conciliada (valorPago null) conta cheia (obrigação pendente);
+  // ao registrar a baixa, passa a contar só o que foi quitado.
+  const faturasNoMes = (y, m) => (cartoes || []).filter((c) => c.mesRef === `${y}-${m}`).reduce((s, c) => s + (c.valorPago == null ? (c.total || 0) : (Number(c.valorPago) || 0)), 0);
 
   // Renda fixa estruturada: soma da renda dos holerites vigentes no mês
   // (líquido + benefícios/outros rendimentos).
@@ -148,35 +217,12 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   const totalRenda = rendaNum + extraNum;
   const despesasLancadas = useMemo(() => despesas.reduce((s, d) => s + d.valor, 0), [despesas]);
 
-  const parcelasMensais = useMemo(() => emprestimos.reduce((s, e) => {
-    const pago = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
-    return s + emprestimoEstado(e, pago).proxima; // próxima parcela (já com aportes/amortizações)
-  }, 0), [emprestimos]);
+  // Parcelas de empréstimo que vencem NO MÊS exibido (já com aportes/amortizações).
+  // É a mesma conta que alimenta as linhas de empréstimo do Extrato.
+  const parcelasMensais = useMemo(() => parcelasEmprestimosNoMes(year, monthIdx), [emprestimos, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Parcelas do mês vindas da aba Parcelados. IMPORTANTE: se a parcela já está
-  // numa fatura de cartão importada DESTE mês (o total da fatura já a inclui),
-  // não somamos de novo — evita contar em dobro. Nos meses sem fatura
-  // (retroativos/futuros) a parcela conta normalmente como projeção.
-  const parcelasCartaoMes = useMemo(() => {
-    const mesRefStr = `${year}-${monthIdx}`;
-    const cartoesMes = (cartoes || []).filter((c) => c.mesRef === mesRefStr);
-    const ref = new Date(year, monthIdx, 1);
-    const refFim = new Date(year, monthIdx + 1, 0);
-    return parcelados.reduce((s, p) => {
-      const ini = new Date(p.dataCompra + "T12:00:00");
-      const fim = addMonths(p.dataCompra, p.totalParcelas - 1);
-      if (!(ini <= refFim && fim >= ref)) return s; // não ativa neste mês
-      const jaNaFatura = cartoesMes.some((c) =>
-        (c.compras || []).some((x) => x.parcelas > 1 && x.parcelas === p.totalParcelas && Math.abs((x.valor || 0) - p.valorParcela) < 0.01)
-      );
-      return jaNaFatura ? s : s + p.valorParcela;
-    }, 0);
-  }, [parcelados, cartoes, year, monthIdx]);
-
-  // Regime de CAIXA: o cartão pesa no gasto do mês pelo que foi PAGO (valorPago).
-  // Fatura ainda não conciliada (valorPago null) conta cheia, como antes (obrigação
-  // pendente); ao registrar a baixa, passa a contar só o que foi quitado.
-  const faturasCartaoMes = useMemo(() => (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`).reduce((s, c) => s + (c.valorPago == null ? (c.total || 0) : (Number(c.valorPago) || 0)), 0), [cartoes, year, monthIdx]);
+  const parcelasCartaoMes = useMemo(() => parcelasAvulsasNoMes(year, monthIdx), [parcelados, cartoes, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const faturasCartaoMes = useMemo(() => faturasNoMes(year, monthIdx), [cartoes, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalDespesas = despesasLancadas + parcelasMensais + parcelasCartaoMes + faturasCartaoMes;
 
@@ -214,16 +260,14 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     }).filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
   }, [despesas, cartoes, year, monthIdx]);
 
+  // Histórico: mesma conta do mês exibido (renda dos holerites + extras; gastos =
+  // lançamentos + cartão + parcelas de empréstimo + parcelas avulsas).
   const historicoMeses = useMemo(() => Array.from({ length: 6 }, (_, i) => {
     const d = new Date(year, monthIdx - 5 + i, 1);
-    const m = d.getMonth(), y = d.getFullYear(), k = `${y}-${m}`;
-    const exp = incomes[k] || {};
-    // Salário efetivo do mês (explícito ou herdado) + renda extra do mês.
-    const rendaMes = (exp.renda && String(exp.renda).trim() !== "") ? exp.renda : salarioVigente(incomes, y, m).valor;
-    const rendaEf = parseFloat((rendaMes || "0").replace(",", ".")) || 0;
-    const extraEf = parseFloat((exp.extra || "0").replace(",", ".")) || 0;
-    return { label: MONTH_NAMES[m].slice(0, 3), despesas: (allDespesas[k] || []).reduce((s, x) => s + x.valor, 0), renda: rendaEf + extraEf };
-  }), [allDespesas, incomes, year, monthIdx]);
+    const m = d.getMonth(), y = d.getFullYear();
+    const lancadas = (allDespesas[`${y}-${m}`] || []).reduce((s, x) => s + x.valor, 0);
+    return { label: MONTH_NAMES[m].slice(0, 3), despesas: lancadas + parcelasEmprestimosNoMes(y, m) + parcelasAvulsasNoMes(y, m) + faturasNoMes(y, m), renda: rendaNoMes(y, m) };
+  }), [allDespesas, holerites, rendasExtras, emprestimos, parcelados, cartoes, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Perfis para a importação: cadastrados ("Meus Cartões") + os derivados do
   // histórico de importações. Os cadastrados têm prioridade e trazem os 4 finais.
@@ -234,13 +278,13 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     for (const c of ordenados) {
       const key = (c.nome || c.banco || "").toLowerCase().trim();
       if (!key) continue;
-      map.set(key, { banco: c.banco || "", nome: c.nome || c.banco || "Cartão", limite: c.limite || 0, vencimentoDia: c.vencimentoDia || null, vencimento: c.vencimento || "", finais: "" });
+      map.set(key, { banco: c.banco || "", nome: c.nome || c.banco || "Cartão", limite: c.limite || 0, vencimentoDia: c.vencimentoDia || null, fechamentoDia: null, vencimento: c.vencimento || "", finais: "" });
     }
     // 2) cadastrados sobrescrevem/adicionam (com finais)
     for (const p of cardProfilesDB || []) {
       const key = (p.nome || "").toLowerCase().trim();
       if (!key) continue;
-      map.set(key, { banco: p.banco || "", nome: p.nome, limite: Number(p.limite) || 0, vencimentoDia: p.vencimentoDia || null, vencimento: "", finais: p.finais || "" });
+      map.set(key, { banco: p.banco || "", nome: p.nome, limite: Number(p.limite) || 0, vencimentoDia: p.vencimentoDia || null, fechamentoDia: p.fechamentoDia || null, vencimento: "", finais: p.finais || "" });
     }
     return [...map.values()];
   }, [cartoes, cardProfilesDB]);
@@ -261,10 +305,13 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
 
   const ALL_TABS = [
     { id: "dashboard", label: "Visão Geral" },
+    // Receitas não é um módulo de plano: acompanha quem tem a Visão Geral.
+    { id: "receitas", label: "Receitas", modulo: "dashboard" },
     { id: "lancamentos", label: "Lançamentos" },
     { id: "extrato", label: "Extrato" },
     { id: "cartoes", label: "Cartões de Crédito" },
     { id: "emprestimos", label: "Empréstimos" },
+    { id: "investimentos", label: "Investimentos" },
     { id: "metas", label: "Metas" },
     { id: "historico", label: "Histórico" },
     { id: "assistente", label: "Assistente IA" },
@@ -272,7 +319,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
 
   // Só mostra as abas que o plano do usuário libera.
   const modulos = access?.modulos || [];
-  const TABS = ALL_TABS.filter((t) => modulos.includes(t.id));
+  const TABS = ALL_TABS.filter((t) => modulos.includes(t.modulo || t.id));
   // Admin tem uma aba extra de administração (não é um "módulo" de plano).
   if (access?.admin) TABS.push({ id: "admin", label: "Administração" });
 
@@ -281,7 +328,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
     if (TABS.length && !TABS.some((t) => t.id === tab)) setTab(TABS[0].id);
   }, [modulos]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tabPermitida = (id) => modulos.includes(id);
+  const tabPermitida = (id) => TABS.some((t) => t.id === id);
 
   // Mantém a aba ativa visível na faixa rolável (mobile).
   const tabStripRef = useRef(null);
@@ -340,13 +387,15 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
         {erroSync && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: C.red, borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 14 }}>{erroSync}</div>}
 
         {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
+        {tab === "receitas" && tabPermitida("receitas") && <ReceitasTab totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} pctMes={pctMes} pctGasto={pctGasto} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} monthIdx={monthIdx} year={year} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
-        {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
-        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} cardProfilesImport={cardProfiles} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} globalCategoryRules={globalCategoryRules} membros={membros} setMembros={saveMembros} temImportar temAssistente={tabPermitida("assistente")} access={access} year={year} monthIdx={monthIdx} />}
+        {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} emprestimos={emprestimos} holerites={holerites} rendasExtras={rendasExtras} temReceitas={tabPermitida("receitas")} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
+        {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} cardProfilesImport={cardProfiles} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} globalCategoryRules={globalCategoryRules} membros={membros} setMembros={saveMembros} temImportar temAssistente={modulos.includes("assistente")} access={access} year={year} monthIdx={monthIdx} />}
         {tab === "emprestimos" && tabPermitida("emprestimos") && <EmprestimosTab emprestimos={emprestimos} setEmprestimos={saveEmprestimos} membros={membros} />}
+        {tab === "investimentos" && tabPermitida("investimentos") && <InvestimentosTab investimentos={investimentos} setInvestimentos={saveInvestimentos} membros={membros} year={year} monthIdx={monthIdx} />}
         {tab === "metas" && tabPermitida("metas") && <MetasTab goals={goals} setGoals={saveGoals} />}
         {tab === "historico" && tabPermitida("historico") && <HistoricoTab historicoMeses={historicoMeses} />}
-        {tab === "assistente" && tabPermitida("assistente") && <AssistenteTab chat={chat} setChat={setChat} totalRenda={totalRenda} totalDespesas={totalDespesas} saldoAtual={saldoAtual} projecao={projecao} statusInfo={statusInfo} porCategoria={porCategoria} goals={goals} emprestimos={emprestimos} parcelados={parcelados} monthIdx={monthIdx} year={year} />}
+        {tab === "assistente" && tabPermitida("assistente") && <AssistenteTab chat={chat} setChat={setChat} totalRenda={totalRenda} totalDespesas={totalDespesas} saldoAtual={saldoAtual} projecao={projecao} statusInfo={statusInfo} porCategoria={porCategoria} goals={goals} emprestimos={emprestimos} parcelados={parcelados} parcelasMensais={parcelasMensais} totalEmprestimos={totalEmprestimos} investimentos={investimentos} holerites={holerites} rendasExtras={rendasExtras} monthIdx={monthIdx} year={year} />}
       </div>
 
       {profileOpen && <ProfileModal user={user} onClose={() => setProfileOpen(false)} onUpdated={onUserUpdate} membros={membros} onSaveMembros={saveMembrosCascade} access={access} />}

@@ -3,7 +3,6 @@ import { C, MONTH_NAMES, fmt, fmtPct } from "../../lib/constants";
 import { Card, Label, Badge, Bar, Empty, STitle, Divider, MoneyInput } from "../ui";
 import { CatIcon, Wallet, TrendingDown, PiggyBank, Scale, ReceiptText, CreditCard, Landmark, ShoppingBag, RefreshCw, Undo2, CircleCheck, TriangleAlert, Siren } from "../../lib/icons.jsx";
 import AssinaturasPanel from "../AssinaturasPanel.jsx";
-import RendaMembros from "../RendaMembros.jsx";
 
 const STATUS_ICON = { superavit: CircleCheck, equilibrado: TriangleAlert, deficit: Siren };
 
@@ -11,44 +10,6 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
   const salarioLabel = salarioVig && salarioVig.mes != null ? `${MONTH_NAMES[salarioVig.mes].slice(0, 3)}/${salarioVig.ano}` : "";
   return (
     <div>
-      {/* Renda */}
-      <Card style={{ marginBottom: 14 }}>
-        <STitle>Renda de {MONTH_NAMES[monthIdx]} de {year}</STitle>
-        {/* Renda é só VISUALIZAÇÃO — entra pelo cadastro abaixo (holerites e rendas extras). */}
-        <div className="income-grid">
-          <div>
-            <Label>Renda fixa (holerites)</Label>
-            <div className="money-field">
-              <span style={{ color: C.indigo, fontWeight: 700, fontSize: 13 }}>R$</span>
-              <span style={{ flex: 1, fontSize: 22, fontWeight: 800, color: rendaNum > 0 ? C.text : C.muted }}>{fmt(rendaNum).replace(/^R\$\s*/, "")}</span>
-            </div>
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}><Wallet size={11} /> Atualize pelos holerites no cadastro abaixo.</div>
-          </div>
-          <div>
-            <Label>Renda extra</Label>
-            <div className="money-field">
-              <span style={{ color: C.emerald, fontWeight: 700, fontSize: 13 }}>R$</span>
-              <span style={{ flex: 1, fontSize: 22, fontWeight: 800, color: extraNum > 0 ? C.text : C.muted }}>{fmt(extraNum).replace(/^R\$\s*/, "")}</span>
-            </div>
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}><Wallet size={11} /> Atualize nas rendas extras abaixo (pode adicionar várias).</div>
-          </div>
-        </div>
-        {totalRenda > 0 && (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginBottom: 5 }}>
-              <span>Mês — {fmtPct(pctMes)} concluído</span>
-              <span>Gastos — {fmtPct(pctGasto)} da renda</span>
-            </div>
-            <div style={{ position: "relative", height: 7, background: "var(--fill)", borderRadius: 999 }}>
-              <div style={{ position: "absolute", height: "100%", width: `${Math.min(100, pctMes)}%`, background: "var(--track)", borderRadius: 999 }} />
-              <div style={{ position: "absolute", height: "100%", width: `${Math.min(100, pctGasto)}%`, background: pctGasto > 85 ? C.red : C.accent, borderRadius: 999, transition: "width .5s" }} />
-            </div>
-          </div>
-        )}
-      </Card>
-
-      <RendaMembros membros={membros} holerites={holerites} setHolerites={setHolerites} rendasExtras={rendasExtras} setRendasExtras={setRendasExtras} year={year} monthIdx={monthIdx} />
-
       {/* Previsão */}
       {statusInfo && (
         <div style={{ background: statusInfo.bg, border: `1px solid color-mix(in srgb, ${statusInfo.color} 16%, transparent)`, borderRadius: 16, padding: "16px 18px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -133,7 +94,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       {/* Assinaturas & recorrentes (detectadas automaticamente) */}
       <AssinaturasPanel assinaturas={assinaturas} minMeses={assinMinMeses} onMinMeses={onAssinMinMeses} />
 
-      {totalRenda === 0 && <Empty icon="" title="Informe sua renda para começar" sub="Preencha o campo de renda acima." />}
+      {totalRenda === 0 && <Empty icon="" title="Informe sua renda para começar" sub='Cadastre holerites e rendas extras na aba "Receitas".' />}
       {totalRenda > 0 && despesas.length === 0 && <Empty icon="" title="Nenhuma despesa ainda" sub='Use "Lançamentos" ou importe uma fatura em "Cartões de Crédito".' />}
     </div>
   );

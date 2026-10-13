@@ -17,6 +17,7 @@ const TAB = {
   dashboard: LayoutDashboard, lancamentos: PlusCircle, extrato: ScrollText, importar: FileText,
   cartoes: CreditCard, emprestimos: BanknoteArrowDown, parcelados: ShoppingBag, metas: Trophy,
   historico: ChartColumn, assistente: MessageCircle, admin: Settings,
+  receitas: Wallet, investimentos: TrendingUp,
 };
 
 const CAT = {

@@ -9,6 +9,7 @@ const MODULES = [
   // "importar" foi absorvido pelo módulo "cartoes" (botão dentro do Cartão de Crédito).
   { chave: "cartoes", nome: "Cartões de Crédito", ordem: 5 },
   { chave: "emprestimos", nome: "Empréstimos", ordem: 6 },
+  { chave: "investimentos", nome: "Investimentos", ordem: 7 },
   // "parcelados" foi absorvido pelo módulo "cartoes" (aba dentro do Cartão de Crédito).
   { chave: "metas", nome: "Metas", ordem: 8 },
   { chave: "historico", nome: "Histórico", ordem: 9 },

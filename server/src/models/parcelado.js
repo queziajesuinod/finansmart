@@ -10,7 +10,8 @@ module.exports = (sequelize, DataTypes) => {
       totalParcelas: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
       parcelaAtual: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
       valorParcela: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
-      dataCompra: { type: DataTypes.DATEONLY, allowNull: false },
+      dataCompra: { type: DataTypes.DATEONLY, allowNull: false }, // âncora da 1ª parcela
+      dataCompraReal: { type: DataTypes.DATEONLY, allowNull: true }, // data real da compra
       categoria: { type: DataTypes.STRING, allowNull: false, defaultValue: "outros" },
       origem: { type: DataTypes.STRING, allowNull: true },
       // Referência opcional ao cartão de onde a compra veio (importação).

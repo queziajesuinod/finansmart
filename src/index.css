@@ -237,7 +237,7 @@ html, body { max-width: 100%; overflow-x: clip; }
    uma linha inteira (não são mais cortados fora da tela). */
 .card-profile-grid {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 90px 60px 70px auto;
+  grid-template-columns: 1.3fr 1fr 90px 60px 60px 70px auto;
   gap: 8px;
   align-items: end;
 }

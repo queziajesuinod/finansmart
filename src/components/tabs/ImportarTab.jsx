@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState, useRef, useEffect } from "react";
-import { C, CATEGORIES, todayStr, fmt, genId, tint, addMonths } from "../../lib/constants";
+import { C, CATEGORIES, todayStr, fmt, genId, tint, addMonths, monthDiff } from "../../lib/constants";
+import { primeiraParcelaCartao } from "../../lib/finance";
 import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { parseFatura, aplicarRegras, merchantKey, autoCategoria } from "../../lib/parseFatura";
 import { authConfig, aiImportFatura, getPlans, saveImportLog } from "../../lib/api";
@@ -486,11 +487,28 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     // da parcela atual, mas o nº da parcela é sempre relativo à fatura. Assim a última
     // parcela e o "encerrando" saem certos (ex.: Pichau 10/12 em set → termina em nov).
     const [refAnoP, refMes0] = mesRef.split("-").map((x) => parseInt(x, 10));
+    // Cartão com dia de fechamento cadastrado em "Meus cartões": quando a data impressa
+    // é a da COMPRA original, o mês da 1ª parcela sai da regra do fechamento (compra
+    // depois de a fatura virar vai para a seguinte). Só vale se o resultado fica a no
+    // máximo 1 mês da âncora da fatura — bancos que imprimem a data da parcela atual
+    // (ex.: Nubank) caem fora dessa faixa e seguem pela âncora.
+    const perfilFech = (cardProfiles || []).find((p) => p.fechamentoDia && (p.nome || "").toLowerCase().trim() === cartao.nome.toLowerCase().trim());
+    const isoDe = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     compras.filter((c) => c.parcelas > 1 && c.valor > 0).forEach((c) => {
       const diaCompra = parseInt(String(c.data).slice(8, 10), 10) || 1;
       const ancora = new Date(refAnoP, refMes0, Math.min(diaCompra, 28), 12, 0, 0);
       // addMonths recua com aritmética de mês segura (sem overflow de dia).
-      const dataPrimeira = addMonths(ancora, -(c.parcelaAtual - 1));
+      const primeiraPelaFatura = addMonths(ancora, -(c.parcelaAtual - 1));
+      let dataPrimeira = primeiraPelaFatura;
+      let dataCompraReal = null;
+      if (perfilFech && c.data) {
+        const ini = primeiraParcelaCartao(c.data, perfilFech.fechamentoDia, perfilFech.vencimentoDia || cartao.vencimentoDia);
+        const dIni = ini ? new Date(`${ini}T12:00:00`) : null;
+        if (dIni && Math.abs(monthDiff(addMonths(dIni, c.parcelaAtual - 1), ancora)) <= 1) {
+          dataPrimeira = dIni;
+          dataCompraReal = String(c.data).slice(0, 10);
+        }
+      }
       const nova = {
         id: genId(),
         descricao: c.descricao.replace(/\s*\d{1,2}\/\d{1,2}\s*/g, " ").trim() || c.descricao,
@@ -498,13 +516,16 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
         totalParcelas: c.parcelas,
         parcelaAtual: c.parcelaAtual,
         valorParcela: c.valor,
-        dataCompra: `${dataPrimeira.getFullYear()}-${String(dataPrimeira.getMonth() + 1).padStart(2, "0")}-${String(dataPrimeira.getDate()).padStart(2, "0")}`,
+        dataCompra: isoDe(dataPrimeira),
+        dataCompraReal,
         categoria: c.categoria,
         origem: cartao.nome,
         cartaoId,
         membroId: c.membroId || null,
       };
-      const keys = parcKeys(nova);
+      // Dedup também pela âncora da fatura: um parcelamento já gravado antes de o
+      // fechamento ser cadastrado está no mês antigo e não pode entrar de novo.
+      const keys = [...parcKeys(nova), ...parcKeys({ ...nova, dataCompra: isoDe(primeiraPelaFatura) })];
       if (keys.some((k) => existentes.has(k))) { ignoradas++; return; } // já preenchido → desconsidera
       keys.forEach((k) => existentes.add(k));
       novasParcelas.push(nova);

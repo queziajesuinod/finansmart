@@ -20,7 +20,9 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+// As coleções são salvas inteiras (replace-all) e as faturas acumulam mês a mês:
+// o limite padrão de 100 KB do express.json estouraria com o uso normal.
+app.use(express.json({ limit: "5mb" }));
 app.use(passport.initialize());
 
 // API.
