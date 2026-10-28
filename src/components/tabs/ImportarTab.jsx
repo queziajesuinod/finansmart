@@ -444,16 +444,17 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     const pags = pagsRaw.filter((p) => !jaPagas.has(sig(p)));
 
     const somaCompras = compras.reduce((s, c) => s + c.valor, 0);
-    // Total da fatura = o "Total a pagar" impresso (headline) quando detectado.
-    // Ele pode ser MENOR que a soma dos lançamentos quando houve pagamentos no
-    // período (ex.: Nubank com "Pagamento recebido") — regime de caixa: a fatura
-    // vale o total a pagar, não a soma bruta. Por isso, se há pagamentos, confiamos
-    // no impresso mesmo sendo menor. Sem total impresso, ou em reimportação com
-    // dedup (o impresso não corresponde ao subconjunto de compras novas), usa a soma.
-    const temPagamentos = pags.length > 0;
+    // Total da fatura = a SOMA das compras que você revisou (o que aparece em
+    // "Soma das compras"). Só usamos o "Total a pagar" impresso quando ele é MAIOR
+    // que a soma — aí a fatura inclui encargos não listados como compra (IOF, juros
+    // do rotativo etc.). NUNCA reduzimos abaixo da soma revisada: pagamentos já
+    // aparecem à parte como quitações e são abatidos em "Registrar pagamento",
+    // sem esconder o valor da fatura. (Antes, um "pagamento recebido" detectado
+    // derrubava o total ao salvar, divergindo da revisão.) Em reimportação parcial
+    // (dedup), o impresso não corresponde ao subconjunto novo → usa a soma.
     const total = duplicadas > 0
       ? somaCompras
-      : (totalFatura && (totalFatura >= somaCompras - 0.01 || temPagamentos) ? totalFatura : somaCompras);
+      : (totalFatura && totalFatura >= somaCompras - 0.01 ? totalFatura : somaCompras);
     const portadores = [...new Set(compras.map((c) => c.portador))];
     // Mês de referência: da fatura (meta.mesRef "YYYY-MM"), NÃO o mês visível na tela.
     const mesRef = meta.mesRef

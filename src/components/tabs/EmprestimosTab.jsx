@@ -8,6 +8,31 @@ import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMem
 
 const fmtNum = (v) => new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 
+// Data de vencimento da parcela nº k: 1ª parcela + (k−1) meses, no dia de
+// vencimento (o informado ou o da 1ª parcela). null sem data da 1ª parcela.
+function dataParcelaDate(emp, k) {
+  if (!emp || !emp.dataPrimeira) return null;
+  const base = new Date(String(emp.dataPrimeira).slice(0, 10) + "T12:00:00");
+  if (Number.isNaN(base.getTime())) return null;
+  const diaV = diaVencimentoEmprestimo(emp) || base.getDate();
+  const d = new Date(base.getFullYear(), base.getMonth() + (k - 1), 1, 12, 0, 0);
+  const ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(diaV, ult));
+  return d;
+}
+function dataParcelaStr(emp, k) { const d = dataParcelaDate(emp, k); return d ? d.toLocaleDateString("pt-BR") : "—"; }
+function dataParcelaISO(emp, k) { const d = dataParcelaDate(emp, k); return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : ""; }
+// Compara a data paga com o vencimento → adiantado / em dia / atraso.
+function statusPagamento(vencISO, pagoISO) {
+  if (!vencISO || !pagoISO) return null;
+  const v = new Date(vencISO + "T12:00:00"), p = new Date(pagoISO + "T12:00:00");
+  if (Number.isNaN(v.getTime()) || Number.isNaN(p.getTime())) return null;
+  const dias = Math.round((p - v) / 86400000);
+  if (dias === 0) return { txt: "em dia", cor: C.muted };
+  if (dias < 0) return { txt: `${-dias}d adiant.`, cor: C.emerald };
+  return { txt: `${dias}d atraso`, cor: dias > 5 ? C.red : C.amber };
+}
+
 export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = [] }) {
   const EMPTY = { instituicao: "", contrato: "", sistema: "PRICE", valorContratado: "", taxa: "", taxaPeriodo: "mensal", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", diaVencimento: "", parcelas: "", pago: "0", pagoAuto: true, membroId: null };
   const [form, setForm] = useState(EMPTY);
@@ -91,6 +116,16 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
   }
   function remove(id) { setEmprestimos(emprestimos.filter((e) => e.id !== id)); if (detail?.id === id) setDetail(null); }
   function updatePago(emp, val) { const v = Math.min(emp.parcelas, Math.max(0, parseInt(val) || 0)); setEmprestimos(emprestimos.map((e) => (e.id === emp.id ? { ...e, pago: v, pagoAuto: false } : e))); }
+  // Registra/limpa a data real em que a parcela nº k foi paga (controle de
+  // adiantado/atraso). Guardado em emp.pagamentosParcelas = { [k]: "YYYY-MM-DD" }.
+  function setPagParcela(emp, k, data) {
+    setEmprestimos(emprestimos.map((e) => {
+      if (e.id !== emp.id) return e;
+      const pp = { ...(e.pagamentosParcelas || {}) };
+      if (data) pp[k] = data; else delete pp[k];
+      return { ...e, pagamentosParcelas: pp };
+    }));
+  }
 
   const empViewAll = emprestimos.map((e) => {
     const p = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
@@ -361,17 +396,32 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
               <div style={{ marginTop: 14 }}>
                 <Divider />
                 <STitle>{empSAC ? "Tabela SAC completa" : "Tabela Price completa"}</STitle>
+                <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 10, lineHeight: 1.45 }}>Preencha <b style={{ color: C.subtle }}>Pago em</b> para registrar quando você realmente pagou cada parcela — o selo mostra se foi <b style={{ color: C.emerald }}>adiantado</b>, em dia ou em <b style={{ color: C.amber }}>atraso</b> (comparado ao vencimento). Em branco, assume pago no vencimento. Para antecipar parcelas futuras, use <b style={{ color: C.subtle }}>Amortizar</b>.</div>
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                     <thead>
                       <tr style={{ color: C.muted, borderBottom: `1px solid ${C.border}` }}>
-                        {["Parc.", "Prestação", "Juros", "Amortização", ...(aportes.length ? ["Aporte"] : []), "Saldo"].map((h) => <th key={h} style={{ padding: "7px 8px", textAlign: "right", fontWeight: 700 }}>{h}</th>)}
+                        {["Parc.", "Venc.", "Pago em", "Prestação", "Juros", "Amortização", ...(aportes.length ? ["Aporte"] : []), "Saldo"].map((h) => <th key={h} style={{ padding: "7px 8px", textAlign: "right", fontWeight: 700 }}>{h}</th>)}
                       </tr>
                     </thead>
                     <tbody>
                       {getSchedule(emp, pagoEf).map((row) => (
                         <tr key={row.k} style={{ background: row.extra > 0 ? tint(C.emerald, 12) : (row.pago ? "rgba(16,185,129,0.06)" : "transparent"), borderBottom: `1px solid var(--fill-2)` }}>
                           <td style={{ padding: "6px 8px", textAlign: "right", color: row.pago ? C.emerald : C.muted }}>{row.k}{row.pago && <Check size={11} style={{ marginLeft: 4, verticalAlign: "-1px" }} />}</td>
+                          <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted, whiteSpace: "nowrap" }}>{dataParcelaStr(emp, row.k)}</td>
+                          <td style={{ padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap" }}>
+                            {row.pago ? (() => {
+                              const vISO = dataParcelaISO(emp, row.k);
+                              const pagoISO = (emp.pagamentosParcelas || {})[row.k] || "";
+                              const st = statusPagamento(vISO, pagoISO);
+                              return (
+                                <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                                  <input type="date" value={pagoISO} onChange={(e) => setPagParcela(emp, row.k, e.target.value)} title="Data real do pagamento" style={{ fontSize: 10.5, padding: "3px 5px", background: "var(--fill)", border: `1px solid ${pagoISO ? C.border : "var(--border)"}`, borderRadius: "var(--r-xs)", color: pagoISO ? C.text : C.muted, outline: "none" }} />
+                                  {st && <span style={{ fontSize: 9, fontWeight: 800, color: st.cor }}>{st.txt}</span>}
+                                </span>
+                              );
+                            })() : <span style={{ color: C.muted }}>—</span>}
+                          </td>
                           <td style={{ padding: "6px 8px", textAlign: "right", color: C.text }}>{fmt(row.pmt)}</td>
                           <td style={{ padding: "6px 8px", textAlign: "right", color: C.rose }}>{fmt(row.juros)}</td>
                           <td style={{ padding: "6px 8px", textAlign: "right", color: C.emerald }}>{fmt(row.amort)}</td>

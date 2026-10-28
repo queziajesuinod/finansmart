@@ -26,7 +26,7 @@ const MOCK_STATE = {
   ],
   parcelados: [], membros: [],
   emprestimos: [
-    { id: 1, instituicao: "Caixa", contrato: "CEF-00482", sistema: "PRICE", valorContratado: 40000, taxa: 1.49, taxaPeriodo: "mensal", dataContratacao: "2024-02-10", dataPrimeira: "2024-03-10", dataQuitacao: "2028-02-10", diaVencimento: 10, parcelas: 48, pago: 0, pagoAuto: true, membroId: null, amortizacoes: [] },
+    { id: 1, instituicao: "Caixa", contrato: "CEF-00482", sistema: "PRICE", valorContratado: 40000, taxa: 1.49, taxaPeriodo: "mensal", dataContratacao: "2024-02-10", dataPrimeira: "2024-03-10", dataQuitacao: "2028-02-10", diaVencimento: 10, parcelas: 48, pago: 0, pagoAuto: true, membroId: null, amortizacoes: [], pagamentosParcelas: { "1": "2024-03-08", "2": "2024-04-12", "3": "2024-05-10" } },
   ],
   goals: [
     { id: 1, nome: "Reserva de emergência", alvo: 30000, atual: 18500, prazo: "2027-06-30" },
@@ -96,4 +96,8 @@ if (params.get("notif")) {
 // Abre o form de amortização do 1º empréstimo quando ?amort=1.
 if (params.get("amort")) {
   setTimeout(() => { [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Amortizar")?.click(); }, 500);
+}
+// Abre a tabela do 1º empréstimo quando ?tabela=1.
+if (params.get("tabela")) {
+  setTimeout(() => { [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Ver tabela")?.click(); }, 500);
 }
