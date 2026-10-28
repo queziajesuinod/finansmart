@@ -37,6 +37,10 @@ if (fs.existsSync(DIST)) {
   app.use(express.static(DIST));
   // Fallback SPA: qualquer rota que não seja de API devolve o index.html.
   app.get("*", (req, res, next) => {
+    // /admin (exata) é a PÁGINA do Console de Administração no SPA — as rotas
+    // de API do admin são todas sub-caminhos (/admin/modules, /admin/users…),
+    // então o caminho exato fica livre para servir o front.
+    if (req.path === "/admin" || req.path === "/admin/") return res.sendFile(path.join(DIST, "index.html"));
     if (API_PREFIX.test(req.path)) return next();
     return res.sendFile(path.join(DIST, "index.html"));
   });

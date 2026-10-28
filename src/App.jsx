@@ -3,16 +3,9 @@ import { useEffect, useState } from "react";
 import AuthScreen from "./components/AuthScreen.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import LockedScreen from "./components/LockedScreen.jsx";
-import { C } from "./lib/constants.js";
+import AdminTab from "./components/tabs/AdminTab.jsx";
+import { LoadingScreen } from "./components/Logo.jsx";
 import { getToken, setToken, me as fetchMe, logout as apiLogout } from "./lib/api.js";
-
-function Splash({ children }) {
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg, color: C.muted, fontFamily: "sans-serif" }}>
-      {children}
-    </div>
-  );
-}
 
 export default function App() {
   const [session, setSession] = useState(null); // { user, access }
@@ -54,9 +47,19 @@ export default function App() {
     setSession((s) => (s ? { ...s, user } : s));
   }
 
-  if (loading) return <Splash>Carregando...</Splash>;
+  if (loading) return <LoadingScreen />;
   if (!session) return <AuthScreen onLogin={handleLogin} />;
   if (!session.access?.liberado) return <LockedScreen user={session.user} onLogout={handleLogout} />;
+
+  // Console de Administração vive numa URL própria (/admin), separado do app
+  // do usuário. Só admins acessam; os demais são devolvidos ao app.
+  const onAdminRoute = window.location.pathname.replace(/\/+$/, "") === "/admin";
+  if (onAdminRoute) {
+    if (session.access?.admin) {
+      return <AdminTab user={session.user} onBack={() => { window.location.href = "/"; }} onLogout={handleLogout} />;
+    }
+    window.history.replaceState({}, "", "/");
+  }
 
   return <Dashboard user={session.user} access={session.access} onLogout={handleLogout} onUserUpdate={handleUserUpdate} />;
 }

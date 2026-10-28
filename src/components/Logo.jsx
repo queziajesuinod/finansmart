@@ -13,11 +13,31 @@ export function LogoMark({ size = 24, stroke = 3.4, ...p }) {
   );
 }
 
-// Tile da marca (quadrado arredondado com o símbolo). bg = azul de ação.
-export function LogoTile({ size = 34, radius = 10 }) {
+// Tile da marca — cartão metálico crisp: azul elétrico com brilho superior e
+// profundidade real (nada de pílula/achatado). radius pequeno por padrão.
+export function LogoTile({ size = 36, radius }) {
+  const r = radius != null ? radius : Math.max(5, Math.round(size * 0.16));
   return (
-    <div style={{ width: size, height: size, borderRadius: radius, background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-      <LogoMark size={Math.round(size * 0.62)} />
+    <div style={{
+      width: size, height: size, borderRadius: r,
+      background: "linear-gradient(180deg, var(--primary-strong), var(--primary))",
+      color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+      boxShadow: "var(--shadow-primary), inset 0 1px 0 rgba(255,255,255,0.30)",
+    }}>
+      <LogoMark size={Math.round(size * 0.6)} />
+    </div>
+  );
+}
+
+// Tela de carregamento compartilhada: logo pulsando + spinner + texto.
+export function LoadingScreen({ text = "Carregando..." }) {
+  return (
+    <div className="jp-splash" style={{ fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" }}>
+      <div className="jp-splash-logo"><LogoTile size={60} /></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="jp-spin" />
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{text}</span>
+      </div>
     </div>
   );
 }
@@ -25,8 +45,8 @@ export function LogoTile({ size = 34, radius = 10 }) {
 // Wordmark com a tipografia de títulos (Plus Jakarta Sans).
 export function Wordmark({ size = 15 }) {
   return (
-    <span style={{ fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif", fontWeight: 800, fontSize: size, letterSpacing: "-0.3px", color: "var(--text)" }}>
-      José <span style={{ color: "var(--accent)" }}>Planeja</span>
+    <span style={{ fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif", fontWeight: 800, fontSize: size, letterSpacing: "-0.3px", color: "var(--text)", whiteSpace: "nowrap" }}>
+      José <span style={{ color: "var(--primary)" }}>Planeja</span>
     </span>
   );
 }

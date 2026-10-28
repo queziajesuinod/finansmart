@@ -6,6 +6,8 @@ import { Card, Label, Field, Inp, Btn, Bar, Empty, STitle, Divider, IcoTxt, Mone
 import { Pencil, Trash2, Scale, TrendingDown, ReceiptText, BanknoteArrowDown, Check, Save, CircleCheck, Siren, RefreshCw, X } from "../../lib/icons.jsx";
 import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
+const fmtNum = (v) => new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
+
 export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = [] }) {
   const EMPTY = { instituicao: "", contrato: "", sistema: "PRICE", valorContratado: "", taxa: "", taxaPeriodo: "mensal", dataContratacao: "", dataPrimeira: "", dataQuitacao: "", diaVencimento: "", parcelas: "", pago: "0", pagoAuto: true, membroId: null };
   const [form, setForm] = useState(EMPTY);
@@ -105,15 +107,26 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
   return (
     <div>
       {emprestimos.length > 0 && (
-        <div className="stat-grid" style={{ marginBottom: 14 }}>
-          {[{ label: "Saldo Devedor Total", value: fmt(totalSD), color: C.rose, Icon: Scale }, { label: "Parcela Mensal Total", value: fmt(totalPMT), color: C.amber, Icon: TrendingDown }, { label: "Contratos ativos", value: empView.length, color: C.cyan, Icon: ReceiptText }].map((c) => (
-            <Card key={c.label} style={{ padding: "12px 13px" }}>
-              <div style={{ marginBottom: 6, color: c.color }}><c.Icon size={16} strokeWidth={2} /></div>
-              <Label>{c.label}</Label>
-              <div style={{ fontSize: 14, fontWeight: 800, color: c.color }}>{c.value}</div>
-            </Card>
-          ))}
-        </div>
+        <section className="vg-card" style={{ marginBottom: 14 }} aria-label="Dívidas">
+          <svg className="vg-wave" viewBox="0 0 360 210" preserveAspectRatio="none" aria-hidden="true">
+            <defs><linearGradient id="divwv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6A6AFF" stopOpacity=".5" /><stop offset="1" stopColor="#1414C8" stopOpacity=".1" /></linearGradient></defs>
+            <path d="M360 0 L232 0 C262 54 196 92 250 140 C280 166 300 190 300 210 L360 210 Z" fill="url(#divwv)" />
+            <path d="M360 0 L286 0 C300 46 250 78 300 128 C322 150 338 182 338 210 L360 210 Z" fill="#8080FF" fillOpacity=".16" />
+          </svg>
+          <div className="vg-sheen" />
+          <div className="vg-cnt">
+            <div className="vg-top">
+              <div className="vg-kic">Dívidas · saldo devedor</div>
+              <span className="vg-chip" style={{ background: "rgba(251,191,36,.18)", color: "#FFD79A", borderColor: "rgba(251,191,36,.45)" }}>{empView.length} contrato{empView.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="vg-bal"><small>R$</small>{fmtNum(totalSD)}</div>
+            <div className="vg-desc">Parcela mensal total {fmt(totalPMT)}</div>
+            <div className="vg-splits">
+              <div className="vg-split"><div className="l"><span className="vg-dot" style={{ background: "#FFD79A" }} />Parcela mensal</div><div className="v">{fmt(totalPMT)}</div></div>
+              <div className="vg-split"><div className="l"><span className="vg-dot" style={{ background: "#ADADFF" }} />Contratos</div><div className="v">{empView.length}</div></div>
+            </div>
+          </div>
+        </section>
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -130,36 +143,18 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
             <Field label="Instituição Financeira" span={1}><Inp placeholder="Ex: Caixa, Nubank..." value={form.instituicao} onChange={f("instituicao")} /></Field>
             <Field label="Número do Contrato"><Inp placeholder="Opcional" value={form.contrato} onChange={f("contrato")} /></Field>
             <Field label="Sistema de Amortização" span={2}>
-              <div className="tab-strip" role="tablist" style={{ display: "flex", gap: 8 }}>
-                {SISTEMAS.map((s) => {
-                  const on = sistema === s.id;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={on}
-                      onClick={() => setForm((p) => ({ ...p, sistema: s.id }))}
-                      style={{
-                        flex: 1, padding: "9px 12px", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700,
-                        border: `1px solid ${on ? C.accent : C.border}`,
-                        background: on ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "var(--fill)",
-                        color: on ? C.accent : C.subtle,
-                      }}
-                    >
-                      {s.label}
-                    </button>
-                  );
-                })}
+              <div className="seg" role="tablist" style={{ display: "flex", width: "100%" }}>
+                {SISTEMAS.map((s) => (
+                  <button key={s.id} type="button" aria-pressed={sistema === s.id} onClick={() => setForm((p) => ({ ...p, sistema: s.id }))} style={{ flex: 1 }}>{s.label}</button>
+                ))}
               </div>
             </Field>
             <Field label="Valor Contratado (R$)"><MoneyInput placeholder="0,00" value={form.valorContratado} onChange={f("valorContratado")} /></Field>
             <Field label="Taxa de Juros (%)">
-              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                {[{ id: "mensal", l: "Mensal" }, { id: "anual", l: "Anual" }].map((o) => {
-                  const on = taxaPeriodo === o.id;
-                  return <button key={o.id} type="button" onClick={() => setForm((p) => ({ ...p, taxaPeriodo: o.id }))} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 11.5, fontWeight: 700, border: `1px solid ${on ? C.accent : C.border}`, background: on ? tint(C.accent, 12) : "var(--fill)", color: on ? C.accent : C.subtle }}>{o.l}</button>;
-                })}
+              <div className="seg" style={{ display: "flex", width: "100%", marginBottom: 6 }}>
+                {[{ id: "mensal", l: "Mensal" }, { id: "anual", l: "Anual" }].map((o) => (
+                  <button key={o.id} type="button" aria-pressed={taxaPeriodo === o.id} onClick={() => setForm((p) => ({ ...p, taxaPeriodo: o.id }))} style={{ flex: 1 }}>{o.l}</button>
+                ))}
               </div>
               <Inp type="number" placeholder={taxaPeriodo === "anual" ? "Ex: 19.56" : "Ex: 1.5"} value={form.taxa} onChange={f("taxa")} />
               {taxaInput > 0 && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 5 }}>≈ {taxaPeriodo === "anual" ? `${round4(taxa)}% ao mês` : `${round4(taxaAnual)}% ao ano`}</div>}
@@ -239,38 +234,52 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
         const diaVenc = diaVencimentoEmprestimo(emp);
         return (
           <Card key={emp.id} style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  {emp.instituicao}
-                  <span style={{ fontSize: 10, fontWeight: 700, color: C.cyan, background: "color-mix(in srgb, var(--info) 14%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{empSAC ? "SAC" : "Price"}</span>
-                  {membrosOrdenados(membros).length > 1 && <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: "color-mix(in srgb, var(--accent) 12%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{nomeMembro(emp.membroId, membros)}</span>}
+            {/* Banner "cartão de dívida" — saldo devedor + próxima parcela + progresso. */}
+            <div className="cc">
+              <svg className="cc-wave" viewBox="0 0 360 150" preserveAspectRatio="none" aria-hidden="true">
+                <defs><linearGradient id={`divw-${emp.id}`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6A6AFF" stopOpacity=".5" /><stop offset="1" stopColor="#1414C8" stopOpacity=".1" /></linearGradient></defs>
+                <path d="M360 0 L236 0 C266 40 200 66 254 100 C284 118 300 140 300 150 L360 150 Z" fill={`url(#divw-${emp.id})`} />
+                <path d="M360 0 L290 0 C304 34 256 56 304 92 C326 108 338 130 338 150 L360 150 Z" fill="#8080FF" fillOpacity=".16" />
+              </svg>
+              <div className="cc-cnt">
+                <div className="cc-top">
+                  <div className="cc-bank">{empSAC ? "SAC" : "Price"}{membrosOrdenados(membros).length > 1 ? ` · ${nomeMembro(emp.membroId, membros)}` : ""}</div>
+                  <div className="cc-acts">
+                    <button className="cc-act" aria-label="Editar" onClick={() => startEdit(emp)}><Pencil size={14} /></button>
+                    <button className="cc-act" aria-label="Excluir" onClick={() => remove(emp.id)}><Trash2 size={14} /></button>
+                  </div>
                 </div>
-                {emp.contrato && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Contrato: {emp.contrato}</div>}
-                {emp.dataPrimeira && <div style={{ fontSize: 11, color: C.muted }}>1ª parcela: {new Date(emp.dataPrimeira + "T12:00:00").toLocaleDateString("pt-BR")}</div>}
-                {emp.dataQuitacao && <div style={{ fontSize: 11, color: C.muted }}>Quitação: {new Date(emp.dataQuitacao + "T12:00:00").toLocaleDateString("pt-BR")}</div>}
-                {diaVenc && <div style={{ fontSize: 11, color: C.muted }}>Vencimento: todo dia {diaVenc}</div>}
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <button onClick={() => abrirAmort(emp, pagoEf)} style={{ padding: "4px 9px", background: tint(C.emerald, 12), border: `1px solid ${tint(C.emerald, 26)}`, borderRadius: 7, color: C.emerald, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{isAmort ? "Fechar" : "Amortizar"}</button>
-                <button onClick={() => setDetail(isDetail ? null : emp)} style={{ padding: "4px 9px", background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.2)", borderRadius: 7, color: C.cyan, fontSize: 10, cursor: "pointer" }}>{isDetail ? "Fechar" : "Tabela"}</button>
-                <button className="mini-act" aria-label="Editar" onClick={() => startEdit(emp)} style={{ padding: "6px 9px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 8, color: C.indigo, cursor: "pointer" }}><Pencil size={14} /></button>
-                <button className="mini-act" aria-label="Excluir" onClick={() => remove(emp.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
+                <div className="cc-chip" aria-hidden="true"></div>
+                <div className="cc-name">{emp.instituicao}</div>
+                <div className="cc-row">
+                  <div><div className="l">Saldo devedor</div><div className="fat">{fmt(sd)}</div></div>
+                  <div className="venc">Parcela {fmt(pmt2)}{diaVenc ? ` · dia ${diaVenc}` : ""}</div>
+                </div>
+                <div className="cc-limite">
+                  <div className="t"><i style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div>
+                  <div className="x"><span>{fmtPct(pct)} pago</span><span>{rest} parcela{rest !== 1 ? "s" : ""} restante{rest !== 1 ? "s" : ""}</span></div>
+                </div>
               </div>
             </div>
+
+            <div style={{ display: "flex", gap: 8, margin: "12px 0" }}>
+              <button className="btn ghost sm" style={{ flex: 1 }} onClick={() => abrirAmort(emp, pagoEf)}>{isAmort ? "Fechar aporte" : "Amortizar"}</button>
+              <button className="btn ghost sm" style={{ flex: 1 }} onClick={() => setDetail(isDetail ? null : emp)}>{isDetail ? "Fechar tabela" : "Ver tabela"}</button>
+            </div>
+
+            {(emp.contrato || emp.dataPrimeira || emp.dataQuitacao) && (
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>
+                {[emp.contrato ? `Contrato ${emp.contrato}` : "", emp.dataPrimeira ? `1ª parcela ${new Date(emp.dataPrimeira + "T12:00:00").toLocaleDateString("pt-BR")}` : "", emp.dataQuitacao ? `quitação ${new Date(emp.dataQuitacao + "T12:00:00").toLocaleDateString("pt-BR")}` : ""].filter(Boolean).join(" · ")}
+              </div>
+            )}
+
             <div className="stat-grid" style={{ marginBottom: 12 }}>
-              {[{ l: "Valor Contratado", v: fmt(emp.valorContratado), c: C.text }, { l: empSAC ? "Próxima Parcela" : "Parcela (Price)", v: fmt(pmt2), c: C.indigo }, { l: "Saldo Devedor", v: fmt(sd), c: C.rose }, { l: "Taxa mensal", v: `${round4(emp.taxa)}% a.m.`, c: C.amber }, { l: "Taxa anual", v: `${round4(taxaAnualEmp)}% a.a.`, c: C.amber }, { l: "Pagas / Total", v: `${pagoEf} / ${nFinal}`, c: C.subtle }, { l: "Restantes", v: rest, c: rest === 0 ? C.emerald : C.cyan }].map((x) => (
-                <div key={x.l} style={{ background: "var(--fill-2)", borderRadius: 8, padding: "9px 11px" }}>
+              {[{ l: "Valor Contratado", v: fmt(emp.valorContratado), c: C.text }, { l: "Taxa mensal", v: `${round4(emp.taxa)}% a.m.`, c: C.amber }, { l: "Taxa anual", v: `${round4(taxaAnualEmp)}% a.a.`, c: C.amber }, { l: "Pagas / Total", v: `${pagoEf} / ${nFinal}`, c: C.subtle }].map((x) => (
+                <div key={x.l} style={{ background: "var(--fill-2)", borderRadius: "var(--r-sm)", padding: "9px 11px" }}>
                   <Label>{x.l}</Label>
                   <div style={{ fontSize: 13, fontWeight: 700, color: x.c }}>{x.v}</div>
                 </div>
               ))}
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginBottom: 4 }}>
-                <span>Progresso de pagamento</span><span>{fmtPct(pct)}</span>
-              </div>
-              <Bar pct={pct} color={pct >= 100 ? C.emerald : C.indigo} h={7} />
             </div>
 
             {aportes.length > 0 && (
@@ -286,11 +295,10 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
                   <Label>Amortização extraordinária (aporte extra)</Label>
                   <button aria-label="Fechar" onClick={() => setAmortOpen(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", display: "inline-flex" }}><X size={15} /></button>
                 </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                  {[{ id: "prazo", l: "Reduzir prazo" }, { id: "parcela", l: "Reduzir parcela" }].map((o) => {
-                    const on = amortForm.tipo === o.id;
-                    return <button key={o.id} type="button" onClick={() => setAmortForm((p) => ({ ...p, tipo: o.id }))} style={{ flex: 1, padding: "9px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, border: `1px solid ${on ? C.accent : C.border}`, background: on ? tint(C.accent, 12) : "transparent", color: on ? C.accent : C.muted }}>{o.l}</button>;
-                  })}
+                <div className="seg" style={{ display: "flex", width: "100%", marginBottom: 10 }}>
+                  {[{ id: "prazo", l: "Reduzir prazo" }, { id: "parcela", l: "Reduzir parcela" }].map((o) => (
+                    <button key={o.id} type="button" aria-pressed={amortForm.tipo === o.id} onClick={() => setAmortForm((p) => ({ ...p, tipo: o.id }))} style={{ flex: 1 }}>{o.l}</button>
+                  ))}
                 </div>
                 <div className="form-grid-2">
                   <Field label="Valor do aporte (R$)"><MoneyInput placeholder="0,00" value={amortForm.valor} onChange={(e) => setAmortForm((p) => ({ ...p, valor: e.target.value }))} /></Field>

@@ -18,6 +18,7 @@ const INDEXADORES = [
 ];
 
 const num = (v) => parseFloat(String(v == null ? "" : v).replace(",", ".")) || 0;
+const fmtNum = (v) => new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 
 // Texto da rentabilidade contratada (só renda fixa). Ex.: "100% do CDI".
 function rentabilidade(inv) {
@@ -104,21 +105,32 @@ export default function InvestimentosTab({ investimentos = [], setInvestimentos,
 
   return (
     <div>
-      {investimentos.length > 0 && (
-        <div className="stat-grid" style={{ marginBottom: 14 }}>
-          {[
-            { label: "Total aplicado", value: fmt(totalAplicado), color: C.indigo, Icon: Wallet },
-            { label: `Saldo em ${MONTH_NAMES[monthIdx].slice(0, 3)}/${year}`, value: fmt(totalSaldo), color: C.emerald, Icon: PiggyBank },
-            { label: "Rendimento", value: fmt(totalRend), color: totalRend >= 0 ? C.emerald : C.red, Icon: TrendingUp },
-          ].map((c) => (
-            <Card key={c.label} style={{ padding: "12px 13px" }}>
-              <div style={{ marginBottom: 6, color: c.color }}><c.Icon size={16} strokeWidth={2} /></div>
-              <Label>{c.label}</Label>
-              <div style={{ fontSize: 14, fontWeight: 800, color: c.color }}>{c.value}</div>
-            </Card>
-          ))}
-        </div>
-      )}
+      {investimentos.length > 0 && (() => {
+        const rendPct = totalAplicado > 0 ? (totalRend / totalAplicado) * 100 : 0;
+        const up = totalRend >= 0;
+        return (
+          <section className="vg-card" style={{ marginBottom: 14 }} aria-label="Patrimônio">
+            <svg className="vg-wave" viewBox="0 0 360 210" preserveAspectRatio="none" aria-hidden="true">
+              <defs><linearGradient id="patwv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6A6AFF" stopOpacity=".5" /><stop offset="1" stopColor="#1414C8" stopOpacity=".1" /></linearGradient></defs>
+              <path d="M360 0 L232 0 C262 54 196 92 250 140 C280 166 300 190 300 210 L360 210 Z" fill="url(#patwv)" />
+              <path d="M360 0 L286 0 C300 46 250 78 300 128 C322 150 338 182 338 210 L360 210 Z" fill="#8080FF" fillOpacity=".16" />
+            </svg>
+            <div className="vg-sheen" />
+            <div className="vg-cnt">
+              <div className="vg-top">
+                <div className="vg-kic">Patrimônio · {MONTH_NAMES[monthIdx].slice(0, 3)}/{year}</div>
+                <span className="vg-chip" style={{ background: up ? "rgba(51,214,159,.18)" : "rgba(255,107,134,.18)", color: up ? "#9DF2CF" : "#FFB3C1", borderColor: up ? "rgba(51,214,159,.45)" : "rgba(255,107,134,.45)" }}>{up ? "▲" : "▼"} {Math.abs(rendPct).toFixed(1).replace(".", ",")}%</span>
+              </div>
+              <div className="vg-bal"><small>R$</small>{fmtNum(totalSaldo)}</div>
+              <div className="vg-desc">{lista.length} aplicaç{lista.length === 1 ? "ão" : "ões"} · rendimento {fmt(totalRend)}</div>
+              <div className="vg-splits">
+                <div className="vg-split"><div className="l"><span className="vg-dot" style={{ background: "#ADADFF" }} />Aplicado</div><div className="v">{fmt(totalAplicado)}</div></div>
+                <div className="vg-split"><div className="l"><span className="vg-dot" style={{ background: up ? "#9DF2CF" : "#FFB3C1" }} />Rendimento</div><div className="v">{fmt(totalRend)}</div></div>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <STitle style={{ margin: 0 }}><IcoTxt Icon={TrendingUp} size={15}>Meus Investimentos</IcoTxt></STitle>
@@ -134,11 +146,10 @@ export default function InvestimentosTab({ investimentos = [], setInvestimentos,
             <Field label="Instituição Financeira"><Inp placeholder="Ex: Nubank, XP, Caixa..." value={form.instituicao} onChange={f("instituicao")} /></Field>
             <Field label="Aplicação"><Inp placeholder="Ex: CDB, Tesouro Selic, ações..." value={form.nome} onChange={f("nome")} /></Field>
             <Field label="Tipo de Aplicação" span={2}>
-              <div style={{ display: "flex", gap: 8 }}>
-                {TIPOS.map((t) => {
-                  const on = (isRF ? "RF" : "RV") === t.id;
-                  return <button key={t.id} type="button" onClick={() => setForm((p) => ({ ...p, tipo: t.id }))} style={{ flex: 1, padding: "9px 12px", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700, border: `1px solid ${on ? C.accent : C.border}`, background: on ? tint(C.accent, 12) : "var(--fill)", color: on ? C.accent : C.subtle }}>{t.label}</button>;
-                })}
+              <div className="seg" style={{ display: "flex", width: "100%" }}>
+                {TIPOS.map((t) => (
+                  <button key={t.id} type="button" aria-pressed={(isRF ? "RF" : "RV") === t.id} onClick={() => setForm((p) => ({ ...p, tipo: t.id }))} style={{ flex: 1 }}>{t.label}</button>
+                ))}
               </div>
             </Field>
             {isRF && (

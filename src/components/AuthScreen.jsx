@@ -64,7 +64,7 @@ export default function AuthScreen({ onLogin }) {
     <div style={{ minHeight: "100vh", background: `var(--bg)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter','Segoe UI',sans-serif", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><LogoTile size={56} radius={16} /></div>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><LogoTile size={60} /></div>
           <div style={{ fontFamily: "'Plus Jakarta Sans','Inter',sans-serif", fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.6px" }}>José <span style={{ color: C.accent }}>Planeja</span></div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Controle & organização financeira</div>
         </div>
@@ -74,7 +74,7 @@ export default function AuthScreen({ onLogin }) {
 
           {googleEnabled && (
             <>
-              <button onClick={() => { window.location.href = googleLoginUrl; }} style={{ width: "100%", padding: "11px 18px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700, background: "#fff", color: "#1f2937", border: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <button onClick={() => { window.location.href = googleLoginUrl; }} style={{ width: "100%", padding: "11px 18px", borderRadius: "var(--r-sm)", cursor: "pointer", fontSize: 13, fontWeight: 700, background: "#fff", color: "#1f2937", border: "1px solid #dadce0", boxShadow: "var(--shadow-sm)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                 <span style={{ fontWeight: 900, color: "#4285F4" }}>G</span> Entrar com Google
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>

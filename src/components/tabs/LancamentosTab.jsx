@@ -1,15 +1,25 @@
 // @ts-nocheck
 import { useState } from "react";
-import { C, CATEGORIES, todayStr, genId } from "../../lib/constants";
+import { C, CATEGORIES, todayStr, genId, fmt, tint } from "../../lib/constants";
 import { Card, Label, Field, Inp, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
-import { CatIcon, Plus, Pencil, Check, Save } from "../../lib/icons.jsx";
+import { CatIcon, Plus, Pencil, Check, Save, Trash2 } from "../../lib/icons.jsx";
 import { MerchantIcon } from "../../lib/brandIcons.jsx";
 import { MembroSelect } from "../Membros.jsx";
 
+const catInfo = (id) => CATEGORIES.find((c) => c.id === id) || { label: "Outros", color: "var(--cat-outros)" };
+function diaMes(d) {
+  const dt = new Date(String(d || "") + "T12:00:00");
+  if (isNaN(dt.getTime())) return "";
+  return dt.toLocaleDateString("pt-BR").slice(0, 5);
+}
+
 export default function LancamentosTab({ despesas, setDespesasMk, membros = [] }) {
-  const [form, setForm] = useState({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false, membroId: null });
+  const EMPTY = { descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false, membroId: null };
+  const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
   const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  function startEdit(d) { setForm({ descricao: d.descricao, valor: d.valor, categoria: d.categoria, data: d.data, fixo: !!d.fixo, membroId: d.membroId || null }); setEditId(d.id); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function remove(id) { setDespesasMk((p) => p.filter((d) => d.id !== id)); if (editId === id) { setEditId(null); setForm(EMPTY); } }
 
   function submit() {
     const val = parseFloat(String(form.valor).replace(",", ".")) || 0;
@@ -21,6 +31,7 @@ export default function LancamentosTab({ despesas, setDespesasMk, membros = [] }
   }
 
   return (
+    <div>
     <Card>
       <STitle>{editId ? <IcoTxt Icon={Pencil}>Editar despesa</IcoTxt> : <IcoTxt Icon={Plus}>Nova despesa</IcoTxt>}</STitle>
       <div style={{ display: "grid", gap: 12 }}>
@@ -51,9 +62,35 @@ export default function LancamentosTab({ despesas, setDespesasMk, membros = [] }
         </label>
         <div style={{ display: "flex", gap: 10 }}>
           <Btn onClick={submit} style={{ flex: 1 }}>{editId ? <IcoTxt Icon={Save}>Salvar</IcoTxt> : <IcoTxt Icon={Check}>Adicionar</IcoTxt>}</Btn>
-          {editId && <Btn variant="ghost" onClick={() => { setEditId(null); setForm({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false }); }}>Cancelar</Btn>}
+          {editId && <Btn variant="ghost" onClick={() => { setEditId(null); setForm(EMPTY); }}>Cancelar</Btn>}
         </div>
       </div>
     </Card>
+
+    {despesas.length > 0 && (
+      <>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "16px 0 10px" }}>
+          <STitle style={{ margin: 0 }}>Lançamentos deste mês</STitle>
+          <span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>{despesas.length} no total</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[...despesas].reverse().slice(0, 10).map((d) => {
+            const ci = catInfo(d.categoria);
+            return (
+              <div key={d.id} className="tx-row">
+                <span className="ti" style={{ background: tint(ci.color, 16), color: ci.color, borderColor: tint(ci.color, 24) }}><CatIcon id={d.categoria} size={18} /></span>
+                <div className="tm"><b>{d.descricao}</b><span>{diaMes(d.data)} · {ci.label}{d.fixo ? " · fixa" : ""}</span></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+                  <span className="amt" style={{ color: C.text }}>−{fmt(d.valor)}</span>
+                  <button className="mini-act" aria-label="Editar" onClick={() => startEdit(d)} style={{ padding: "6px 8px", background: tint(C.accent, 12), border: `1px solid ${tint(C.accent, 24)}`, borderRadius: "var(--r-sm)", color: C.accent, cursor: "pointer" }}><Pencil size={13} /></button>
+                  <button className="mini-act" aria-label="Excluir" onClick={() => remove(d.id)} style={{ padding: "6px 8px", background: tint(C.red, 10), border: `1px solid ${tint(C.red, 22)}`, borderRadius: "var(--r-sm)", color: C.red, cursor: "pointer" }}><Trash2 size={13} /></button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    )}
+    </div>
   );
 }

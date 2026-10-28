@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { C, fmt, CATEGORIES, catById } from "../../lib/constants";
 import { Component, Package, Users, Plus, Save, SquareCheck, Square, Pencil, Trash2, Undo2, LogOut, FileText, ArrowLeftRight, TriangleAlert, LayoutGrid, Settings, Siren, X } from "../../lib/icons.jsx";
+import { Menu } from "lucide-react";
 import { Label, Field, Inp, Sel, MoneyInput } from "../ui";
 import { admin } from "../../lib/api";
 
@@ -20,6 +21,7 @@ export default function AdminTab({ user, onBack, onLogout }) {
   const [overview, setOverview] = useState(null);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+  const [mnav, setMnav] = useState(false);
 
   const flash = (m) => { setMsg(m); setErr(""); setTimeout(() => setMsg(""), 2500); };
   const fail = (e) => setErr(e.message || "Erro");
@@ -69,16 +71,35 @@ export default function AdminTab({ user, onBack, onLogout }) {
 
       <div className="ad-main">
         <header className="ad-top">
+          <button className="ad-menu-btn" aria-label="Abrir menu" onClick={() => setMnav(true)}><Menu size={20} /></button>
           <span className="ad-crumb">Gestão / <b>{atual.label}</b></span>
           <span className="sp" />
           <div className="ad-avatar" title={user?.email}>{iniciais(user?.nome || user?.email)}</div>
         </header>
 
-        <nav className="ad-mnav">
-          {NAV.map((n) => (
-            <button key={n.id} aria-current={sub === n.id} onClick={() => setSub(n.id)}>{n.label}</button>
-          ))}
-        </nav>
+        {mnav && (
+          <>
+            <div className="ad-drawer-scrim" onClick={() => setMnav(false)} />
+            <aside className="ad-drawer" aria-label="Navegação do console">
+              <div className="ad-brand">
+                <div className="ad-logo">J</div>
+                <div><b>José Planeja</b><span>Console Admin</span></div>
+              </div>
+              <div className="ad-navgroup">
+                <div className="gl">Gestão</div>
+                {NAV.map((n) => (
+                  <button key={n.id} className="ad-item" aria-current={sub === n.id} onClick={() => { setSub(n.id); setMnav(false); }}>
+                    <n.Icon className="ic" size={17} /> {n.label} {n.count != null && <span className="ct">{n.count}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="ad-foot">
+                <button onClick={onBack}><Undo2 size={16} /> Voltar ao app</button>
+                <button onClick={onLogout}><LogOut size={16} /> Sair</button>
+              </div>
+            </aside>
+          </>
+        )}
 
         <main className="ad-content">
           {err && <div className="ad-alert err">{err}</div>}
@@ -146,7 +167,7 @@ function VisaoGeralPanel({ head, data }) {
               <thead><tr><th>Usuário</th><th>Plano</th><th>Vence</th></tr></thead>
               <tbody>
                 {(d.expirando || []).length === 0
-                  ? <tr><td colSpan={3} style={{ textAlign: "center", color: C.muted, padding: 24 }}>Nada vencendo nos próximos 7 dias. 🎉</td></tr>
+                  ? <tr><td colSpan={3} style={{ textAlign: "center", color: C.muted, padding: 24 }}>Nada vencendo nos próximos 7 dias.</td></tr>
                   : d.expirando.map((e, i) => (
                     <tr key={i}>
                       <td><b style={{ fontSize: 13 }}>{e.usuario}</b><div style={{ fontSize: 11, color: C.muted }}>{e.email}</div></td>
@@ -592,7 +613,7 @@ function ImportacoesPanel({ head, data, reload, onPage, flash, fail }) {
             <thead><tr><th>Comerciante</th><th>Categoria sugerida</th><th>Usuários</th><th style={{ textAlign: "right" }}>Ação</th></tr></thead>
             <tbody>
               {candidatos.length === 0
-                ? <tr><td colSpan={4} style={{ textAlign: "center", color: C.muted, padding: 24 }}>Nenhuma correção pendente para virar regra global. 🎉</td></tr>
+                ? <tr><td colSpan={4} style={{ textAlign: "center", color: C.muted, padding: 24 }}>Nenhuma correção pendente para virar regra global.</td></tr>
                 : candView.map((c) => <CandidatoRow key={c.chave} c={c} reload={reload} flash={flash} fail={fail} />)}
             </tbody>
           </table>

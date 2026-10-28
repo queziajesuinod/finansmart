@@ -184,10 +184,8 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
       ) : (
       <>
       {temImportar && (
-        <button onClick={() => setImportOpen(true)} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: `var(--accent)`, border: "none", color: "#fff", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}><FilePlus size={16} /> Importar fatura (PDF)</button>
+        <button className="btn primary" onClick={() => setImportOpen(true)} style={{ width: "100%", marginBottom: 16 }}><FilePlus size={16} /> Importar fatura (PDF)</button>
       )}
-      <MeusCartoes cardProfiles={cardProfiles} setCardProfiles={setCardProfiles} />
-
       {semFaturasMes && (
         <Empty icon="" title={mk == null ? "Nenhuma fatura importada" : `Nenhuma fatura de ${mesNome}`}
           sub={outrosMeses > 0
@@ -252,17 +250,33 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
         const totalPago = pagamentos.reduce((s, p) => s + (Number(p.valor) || 0), 0);
         return (
           <Card key={cartao.id} style={{ marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <CardBrandTile banco={cartao.banco} nome={cartao.nome} w={46} h={32} radius={7} iconSize={17} />
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 800 }}>{cartao.nome}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{cartao.banco}{cartao.vencimentoDia ? ` · vence dia ${cartao.vencimentoDia} de cada mês` : (cartao.vencimento ? ` · vence ${new Date(cartao.vencimento + "T12:00:00").toLocaleDateString("pt-BR")}` : "")} · {cartao.compras.length} compras{multiPortador ? ` · ${grupos.length} ${usaMembros ? "membros" : "portadores"}` : ""}</div>
+            {/* Cartão-wallet premium: a fatura do mês como um cartão de crédito. */}
+            <div className="cc">
+              <svg className="cc-wave" viewBox="0 0 360 150" preserveAspectRatio="none" aria-hidden="true">
+                <defs><linearGradient id={`ccw-${cartao.id}`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6A6AFF" stopOpacity=".5" /><stop offset="1" stopColor="#1414C8" stopOpacity=".1" /></linearGradient></defs>
+                <path d="M360 0 L236 0 C266 40 200 66 254 100 C284 118 300 140 300 150 L360 150 Z" fill={`url(#ccw-${cartao.id})`} />
+                <path d="M360 0 L290 0 C304 34 256 56 304 92 C326 108 338 130 338 150 L360 150 Z" fill="#8080FF" fillOpacity=".16" />
+              </svg>
+              <div className="cc-cnt">
+                <div className="cc-top">
+                  <div className="cc-bank">{cartao.banco || "Cartão"}{multiPortador ? ` · ${grupos.length} ${usaMembros ? "membros" : "portadores"}` : ""}</div>
+                  <div className="cc-acts">
+                    <button className="cc-act" aria-label="Editar cartão" onClick={() => (editId === cartao.id ? setEditId(null) : abrirEdicao(cartao))}><Pencil size={14} /></button>
+                    <button className="cc-act" aria-label="Remover cartão" onClick={() => remover(cartao.id)}><Trash2 size={14} /></button>
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="mini-act" aria-label="Editar cartão" onClick={() => (editId === cartao.id ? setEditId(null) : abrirEdicao(cartao))} style={{ padding: "6px 9px", background: tint(C.accent, 12), border: `1px solid ${tint(C.accent, 24)}`, borderRadius: 8, color: C.accent, cursor: "pointer" }}><Pencil size={14} /></button>
-                <button className="mini-act" aria-label="Remover cartão" onClick={() => remover(cartao.id)} style={{ padding: "6px 9px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
+                <div className="cc-chip" aria-hidden="true"></div>
+                <div className="cc-name">{cartao.nome}</div>
+                <div className="cc-row">
+                  <div><div className="l">Fatura de {MONTH_NAMES[monthIdx].slice(0, 3)}</div><div className="fat">{fmt(usado)}</div></div>
+                  <div className="venc">{cartao.vencimentoDia ? `Vence dia ${cartao.vencimentoDia}` : (cartao.vencimento ? `Vence ${new Date(cartao.vencimento + "T12:00:00").toLocaleDateString("pt-BR")}` : `${cartao.compras.length} compras`)}</div>
+                </div>
+                {limiteCartao > 0 && (
+                  <div className="cc-limite">
+                    <div className="t"><i style={{ width: `${Math.min(100, Math.max(0, (usado / limiteCartao) * 100))}%` }} /></div>
+                    <div className="x"><span>Limite {fmt(limiteCartao)}</span><span>{fmt(dispCartao)} livre</span></div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -457,6 +471,8 @@ export default function CartoesTab({ cartoes, setCartoes, cardProfiles, setCardP
       })}
       </>
       )}
+
+      <MeusCartoes cardProfiles={cardProfiles} setCardProfiles={setCardProfiles} />
       </>
       )}
     </div>

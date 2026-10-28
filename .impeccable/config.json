@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-10-28T12:11:23.943Z",
+        "reason": "Operate-mode finance app: Inter is the workhorse UI face for dense tabular data; Plus Jakarta Sans (brief-pinned) is the display face. Finish reviewer ruled keep."
+      }
+    ]
+  }
+}

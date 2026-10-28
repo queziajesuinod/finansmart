@@ -51,12 +51,12 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
   };
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto", backdropFilter: "blur(4px)" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440 }}>
+    <div className="scrim-fade" onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto", backdropFilter: "blur(4px)" }}>
+      <div className="pop-in" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440 }}>
         <Card style={{ padding: "22px 22px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: "color-mix(in srgb, var(--accent) 14%, transparent)", color: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><CircleUser size={22} /></div>
+              <div style={{ width: 42, height: 42, borderRadius: "var(--r-md)", background: "linear-gradient(150deg, var(--accent-soft), var(--primary-strong))", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "var(--shadow-primary), inset 0 1px 0 rgba(255,255,255,.3)" }}><CircleUser size={22} /></div>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 800 }}>{user.nome}</div>
                 <div style={{ fontSize: 11, color: C.muted }}>{user.email}</div>

@@ -44,11 +44,11 @@ export function MoneyInput({ value, onChange, style = {}, ...p }) {
     onChange && onChange({ target: { value: brParaNumStr(f) } });
   }
   return <input {...p} type="text" inputMode="decimal" value={display} onChange={handle}
-    style={{ width: "100%", padding: "10px 13px", background: C.fill, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box", ...style }} />;
+    style={{ width: "100%", padding: "10px 13px", background: C.fill, border: `1px solid ${C.border}`, borderRadius: "var(--r-md)", color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box", ...style }} />;
 }
 
 export function Card({ children, style = {} }) {
-  return <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "18px 18px", boxShadow: "var(--shadow-sm)", ...style }}>{children}</div>;
+  return <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: "var(--r-xl)", padding: "18px 18px", boxShadow: "var(--shadow-sm), var(--edge)", ...style }}>{children}</div>;
 }
 
 export function Label({ children, style = {} }) {
@@ -60,27 +60,22 @@ export function Field({ label, children, span = 1, style = {} }) {
 }
 
 export function Inp({ style = {}, ...p }) {
-  return <input {...p} style={{ width: "100%", padding: "10px 13px", background: C.fill, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box", ...style }} />;
+  return <input {...p} style={{ width: "100%", padding: "10px 13px", background: C.fill, border: `1px solid ${C.border}`, borderRadius: "var(--r-md)", color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box", ...style }} />;
 }
 
 export function Sel({ children, style = {}, ...p }) {
-  return <select {...p} style={{ width: "100%", padding: "10px 13px", background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box", ...style }}>{children}</select>;
+  return <select {...p} style={{ width: "100%", padding: "10px 13px", background: C.surface2, border: `1px solid ${C.border}`, borderRadius: "var(--r-md)", color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box", ...style }}>{children}</select>;
 }
 
-export function Btn({ children, variant = "primary", style = {}, ...p }) {
-  const variants = {
-    // Platina — botão de ação principal (chapado, sem degradê).
-    primary: { background: C.primary, color: C.onPrimary, border: "none" },
-    sm: { background: C.primary, color: C.onPrimary, border: "none", fontSize: 12, padding: "7px 14px" },
-    ghost: { background: "transparent", border: `1px solid ${C.border}`, color: C.subtle },
-    danger: { background: tint(C.red, 10), border: `1px solid ${tint(C.red, 26)}`, color: C.red },
-    success: { background: tint(C.emerald, 12), border: `1px solid ${tint(C.emerald, 30)}`, color: C.emerald },
-  };
-  return <button {...p} style={{ padding: "11px 18px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700, transition: "filter .15s, transform .08s", ...variants[variant], ...style }}>{children}</button>;
+// Botão "Elite": cantos crisp (r-sm) e profundidade real. O estilo vive em
+// .btn no index.css; aqui só mapeamos a variante. `sm` = primário compacto.
+export function Btn({ children, variant = "primary", className = "", style = {}, ...p }) {
+  const v = variant === "sm" ? "primary sm" : variant;
+  return <button {...p} className={`btn ${v} ${className}`.trim()} style={style}>{children}</button>;
 }
 
 export function Badge({ label, color, Icon }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, color, background: tint(color, 14), padding: "3px 10px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 5 }}>{Icon && <Icon size={12} strokeWidth={2.2} />}{label}</span>;
+  return <span style={{ fontSize: 11, fontWeight: 700, color, background: tint(color, 14), border: `1px solid ${tint(color, 24)}`, padding: "3px 10px", borderRadius: "var(--r-xs)", display: "inline-flex", alignItems: "center", gap: 5 }}>{Icon && <Icon size={12} strokeWidth={2.2} />}{label}</span>;
 }
 
 export function Bar({ pct, color, h = 6 }) {
@@ -94,7 +89,7 @@ export function Bar({ pct, color, h = 6 }) {
 export function Empty({ title, sub }) {
   return (
     <div style={{ textAlign: "center", padding: "48px 20px", color: C.muted }}>
-      <div style={{ width: 56, height: 56, borderRadius: 16, background: C.fill2, border: `1px solid ${C.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 14, color: C.muted }}>
+      <div style={{ width: 56, height: 56, borderRadius: "var(--r-lg)", background: C.fill2, border: `1px solid ${C.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 14, color: C.muted }}>
         <SearchX size={26} strokeWidth={2} />
       </div>
       <div style={{ fontSize: 15, fontWeight: 600, color: C.subtle, marginBottom: 6 }}>{title}</div>

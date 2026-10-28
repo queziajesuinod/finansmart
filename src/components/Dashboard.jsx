@@ -15,17 +15,19 @@ import HistoricoTab from "./tabs/HistoricoTab.jsx";
 import AssistenteTab from "./tabs/AssistenteTab.jsx";
 import AdminTab from "./tabs/AdminTab.jsx";
 import { TabIcon } from "../lib/icons.jsx";
-import { LogoTile, Wordmark } from "./Logo.jsx";
+import { LogoTile, Wordmark, LoadingScreen } from "./Logo.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import ProfileModal from "./ProfileModal.jsx";
 import NotificationBell from "./NotificationBell.jsx";
 import { gerarNotificacoes } from "../lib/notifications";
 import { detectarAssinaturas } from "../lib/subscriptions";
-import { CircleUser } from "../lib/icons.jsx";
+import { CircleUser, Settings, Plus, LogOut, X, Sparkles, TriangleAlert } from "../lib/icons.jsx";
+import { Menu, ChevronLeft, ChevronRight } from "lucide-react";
 
-export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
-  const [tab, setTab] = useState("dashboard");
+export default function Dashboard({ user, access, onLogout, onUserUpdate, initialTab }) {
+  const [tab, setTab] = useState(initialTab || "dashboard");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [monthIdx, setMonthIdx] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const mk = `${year}-${monthIdx}`;
@@ -304,24 +306,26 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   }), [year, monthIdx, totalRenda, totalDespesas, projecao, porCategoria, cartoes, parcelVencendoMes, goals, assinaturas]);
 
   const ALL_TABS = [
-    { id: "dashboard", label: "Visão Geral" },
+    { id: "dashboard", label: "Visão Geral", grupo: "Visão", desc: "Saldo e projeção do mês" },
     // Receitas não é um módulo de plano: acompanha quem tem a Visão Geral.
-    { id: "receitas", label: "Receitas", modulo: "dashboard" },
-    { id: "lancamentos", label: "Lançamentos" },
-    { id: "extrato", label: "Extrato" },
-    { id: "cartoes", label: "Cartões de Crédito" },
-    { id: "emprestimos", label: "Empréstimos" },
-    { id: "investimentos", label: "Investimentos" },
-    { id: "metas", label: "Metas" },
-    { id: "historico", label: "Histórico" },
-    { id: "assistente", label: "Assistente IA" },
+    { id: "receitas", label: "Receitas", modulo: "dashboard", grupo: "Dia a dia", desc: "Holerites e rendas extras" },
+    { id: "lancamentos", label: "Lançamentos", grupo: "Dia a dia", desc: "Registrar gastos do mês" },
+    { id: "extrato", label: "Extrato", grupo: "Dia a dia", desc: "Tudo que entrou e saiu" },
+    { id: "cartoes", label: "Cartões de Crédito", grupo: "Crédito & dívidas", desc: "Faturas e compras no cartão" },
+    { id: "emprestimos", label: "Empréstimos", grupo: "Crédito & dívidas", desc: "Parcelas e saldo devedor" },
+    { id: "investimentos", label: "Investimentos", grupo: "Planejamento", desc: "Aportes e patrimônio" },
+    { id: "metas", label: "Metas", grupo: "Planejamento", desc: "Objetivos de economia" },
+    { id: "historico", label: "Histórico", grupo: "Planejamento", desc: "Comparativo dos meses" },
+    { id: "assistente", label: "Assistente IA", grupo: "Inteligência", desc: "Análises com IA" },
   ];
+  const GRUPOS = ["Visão", "Dia a dia", "Crédito & dívidas", "Planejamento", "Inteligência"];
 
   // Só mostra as abas que o plano do usuário libera.
   const modulos = access?.modulos || [];
   const TABS = ALL_TABS.filter((t) => modulos.includes(t.modulo || t.id));
-  // Admin tem uma aba extra de administração (não é um "módulo" de plano).
-  if (access?.admin) TABS.push({ id: "admin", label: "Administração" });
+  // Navegação agrupada para o drawer (hub).
+  const NAV = GRUPOS.map((g) => ({ grupo: g, itens: TABS.filter((t) => t.grupo === g) })).filter((s) => s.itens.length);
+  const tabAtual = TABS.find((t) => t.id === tab) || TABS[0];
 
   // Se a aba ativa não é permitida, volta para a primeira disponível.
   useEffect(() => {
@@ -329,64 +333,101 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
   }, [modulos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tabPermitida = (id) => TABS.some((t) => t.id === id);
+  const go = (id) => { setTab(id); setDrawerOpen(false); };
 
-  // Mantém a aba ativa visível na faixa rolável (mobile).
-  const tabStripRef = useRef(null);
+  // Fecha o drawer com Esc e trava a rolagem do fundo enquanto aberto.
   useEffect(() => {
-    const el = tabStripRef.current?.querySelector('[data-active="true"]');
-    el?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  }, [tab]);
+    if (!drawerOpen) return;
+    const onKey = (e) => { if (e.key === "Escape") setDrawerOpen(false); };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [drawerOpen]);
 
-  if (!dataLoaded) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "sans-serif" }}>Carregando seus dados...</div>;
+  if (!dataLoaded) return <LoadingScreen text="Carregando seus dados..." />;
 
-  // Administração é uma PÁGINA de gestão à parte: assume a tela inteira, sem o
-  // shell do app público (topo com mês, tab-strip). "Voltar ao app" retorna às abas.
+  // Administração é uma PÁGINA de gestão à parte servida na rota /admin. Esta
+  // ramificação permanece como fallback caso alguém force tab="admin".
   if (tab === "admin" && access?.admin) {
     return <AdminTab user={user} onBack={() => setTab(TABS.find((t) => t.id !== "admin")?.id || "dashboard")} onLogout={onLogout} />;
   }
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Segoe UI',sans-serif", color: C.text }}>
-      <div style={{ background: "var(--fill-2)", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(20px)" }}>
-        <div className="app-topbar" style={{ maxWidth: 900, margin: "0 auto" }}>
+      <div style={{ background: "color-mix(in srgb, var(--surface) 86%, transparent)", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(18px)", boxShadow: "var(--shadow-sm)" }}>
+        <div className="app-topbar" style={{ maxWidth: 1040, margin: "0 auto" }}>
+          <button className="menu-btn" aria-label="Abrir menu" onClick={() => setDrawerOpen(true)}><Menu size={20} /></button>
           <div className="app-brand">
             <LogoTile size={34} />
             <div style={{ minWidth: 0 }}>
               <Wordmark size={15} />
-              <div style={{ fontSize: 10, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Olá, {user.nome.split(" ")[0]}!</div>
+              <div style={{ fontSize: 10.5, color: C.muted, fontWeight: 600, letterSpacing: "0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tabAtual?.label || "Visão Geral"}</div>
             </div>
           </div>
           <div className="app-month">
-            <button className="icon-btn" aria-label="Mês anterior" onClick={() => { const d = new Date(year, monthIdx - 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }} style={{ fontSize: 18 }}>‹</button>
-            <div style={{ fontSize: 13, fontWeight: 700, minWidth: 92, textAlign: "center" }}>{MONTH_NAMES[monthIdx].slice(0, 3)} {year}</div>
-            <button className="icon-btn" aria-label="Próximo mês" onClick={() => { const d = new Date(year, monthIdx + 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }} style={{ fontSize: 18 }}>›</button>
+            <button className="mbtn" aria-label="Mês anterior" onClick={() => { const d = new Date(year, monthIdx - 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }}><ChevronLeft size={17} /></button>
+            <div className="mlabel">{MONTH_NAMES[monthIdx].slice(0, 3)} {year}</div>
+            <button className="mbtn" aria-label="Próximo mês" onClick={() => { const d = new Date(year, monthIdx + 1, 1); setMonthIdx(d.getMonth()); setYear(d.getFullYear()); }}><ChevronRight size={17} /></button>
           </div>
           <div className="app-actions">
             <NotificationBell notificacoes={notificacoes} onNavigate={setTab} />
             <button className="icon-btn" aria-label="Meu perfil" onClick={() => setProfileOpen(true)}><CircleUser size={16} /></button>
             <ThemeToggle />
-            <button onClick={onLogout} aria-label="Sair" style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 10, height: 40, padding: "0 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, flexShrink: 0 }}>Sair</button>
-          </div>
-        </div>
-        <div style={{ borderTop: `1px solid ${C.border}` }}>
-          <div ref={tabStripRef} className="tab-strip" style={{ maxWidth: 900, margin: "0 auto" }}>
-            {TABS.map((t) => {
-              const on = tab === t.id;
-              return (
-                <button key={t.id} data-active={on} onClick={() => setTab(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 999, cursor: "pointer", fontSize: 12.5, fontWeight: on ? 700 : 600, whiteSpace: "nowrap", transition: "all .15s", border: `1px solid ${on ? tint(C.accent, 35) : C.border}`, background: on ? tint(C.accent, 14) : "transparent", color: on ? C.accent : C.muted }}>
-                  <TabIcon id={t.id} size={14} /> {t.label}
-                </button>
-              );
-            })}
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "18px 12px 48px" }}>
-        {avisoGlobal && <div style={{ background: tint(C.accent, 10), border: `1px solid ${tint(C.accent, 28)}`, borderLeft: `3px solid ${C.accent}`, color: C.subtle, borderRadius: 10, padding: "10px 14px", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>{avisoGlobal}</div>}
-        {erroSync && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: C.red, borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 14 }}>{erroSync}</div>}
+      {drawerOpen && (
+        <>
+          <div className="drawer-scrim" onClick={() => setDrawerOpen(false)} />
+          <nav className="drawer" aria-label="Navegação principal">
+            <div className="drawer-head">
+              <LogoTile size={42} />
+              <div className="who">
+                <b>{user.nome.split(" ")[0]}</b>
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: 200 }}>{user.email}</span>
+              </div>
+              <button className="icon-btn" style={{ marginLeft: "auto" }} aria-label="Fechar menu" onClick={() => setDrawerOpen(false)}><X size={16} /></button>
+            </div>
+            <div className="drawer-body">
+              {NAV.map((sec) => (
+                <div key={sec.grupo}>
+                  <div className="nav-group-label">{sec.grupo}</div>
+                  {sec.itens.map((t) => (
+                    <button key={t.id} className="nav-item" aria-current={tab === t.id} onClick={() => go(t.id)}>
+                      <span className="nic"><TabIcon id={t.id} size={18} /></span>
+                      <span className="ntxt"><b>{t.label}</b><span>{t.desc}</span></span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+              {access?.admin && (
+                <div>
+                  <div className="nav-group-label">Operação</div>
+                  <button className="nav-item" onClick={() => { window.location.href = "/admin"; }}>
+                    <span className="nic"><Settings size={18} /></span>
+                    <span className="ntxt"><b>Administração</b><span>Console de gestão · /admin</span></span>
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="drawer-foot">
+              {tabPermitida("lancamentos") && (
+                <button className="btn primary" onClick={() => go("lancamentos")}><Plus size={16} /> Novo lançamento</button>
+              )}
+              <button className="btn ghost" onClick={onLogout} style={{ flex: tabPermitida("lancamentos") ? "0 0 auto" : "1" }}><LogOut size={16} /> Sair</button>
+            </div>
+          </nav>
+        </>
+      )}
 
-        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} />}
+      <div className="has-dock" style={{ maxWidth: 1040, margin: "0 auto", padding: "18px 12px 64px" }}>
+        {avisoGlobal && <div style={{ display: "flex", gap: 10, background: tint(C.accent, 10), border: `1px solid ${tint(C.accent, 28)}`, color: C.subtle, borderRadius: "var(--r-md)", padding: "11px 14px", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}><Sparkles size={15} style={{ flexShrink: 0, color: C.accent, marginTop: 1 }} />{avisoGlobal}</div>}
+        {erroSync && <div style={{ display: "flex", gap: 10, background: tint(C.red, 10), border: `1px solid ${tint(C.red, 25)}`, color: C.red, borderRadius: "var(--r-md)", padding: "11px 14px", fontSize: 12, marginBottom: 14 }}><TriangleAlert size={15} style={{ flexShrink: 0, marginTop: 1 }} />{erroSync}</div>}
+
+        <div key={tab} className="tab-fade">
+        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} historicoMeses={historicoMeses} setTab={setTab} />}
         {tab === "receitas" && tabPermitida("receitas") && <ReceitasTab totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} pctMes={pctMes} pctGasto={pctGasto} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} monthIdx={monthIdx} year={year} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
         {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} emprestimos={emprestimos} holerites={holerites} rendasExtras={rendasExtras} temReceitas={tabPermitida("receitas")} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
@@ -396,7 +437,18 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate }) {
         {tab === "metas" && tabPermitida("metas") && <MetasTab goals={goals} setGoals={saveGoals} />}
         {tab === "historico" && tabPermitida("historico") && <HistoricoTab historicoMeses={historicoMeses} />}
         {tab === "assistente" && tabPermitida("assistente") && <AssistenteTab chat={chat} setChat={setChat} totalRenda={totalRenda} totalDespesas={totalDespesas} saldoAtual={saldoAtual} projecao={projecao} statusInfo={statusInfo} porCategoria={porCategoria} goals={goals} emprestimos={emprestimos} parcelados={parcelados} parcelasMensais={parcelasMensais} totalEmprestimos={totalEmprestimos} investimentos={investimentos} holerites={holerites} rendasExtras={rendasExtras} monthIdx={monthIdx} year={year} />}
+        </div>
       </div>
+
+      {/* Barra inferior (mobile) — destinos principais + novo lançamento.
+          O drawer (menu ≡) continua para o resto dos módulos e a conta. */}
+      <nav className="dock" aria-label="Navegação rápida">
+        {tabPermitida("dashboard") && <button className="dock-nav" aria-current={tab === "dashboard"} onClick={() => go("dashboard")}><TabIcon id="dashboard" size={21} /> Visão</button>}
+        {tabPermitida("cartoes") && <button className="dock-nav" aria-current={tab === "cartoes"} onClick={() => go("cartoes")}><TabIcon id="cartoes" size={21} /> Cartões</button>}
+        {tabPermitida("lancamentos") && <button className="dock-fab" aria-label="Novo lançamento" onClick={() => go("lancamentos")}><Plus size={24} /></button>}
+        {tabPermitida("metas") && <button className="dock-nav" aria-current={tab === "metas"} onClick={() => go("metas")}><TabIcon id="metas" size={21} /> Metas</button>}
+        {tabPermitida("historico") && <button className="dock-nav" aria-current={tab === "historico"} onClick={() => go("historico")}><TabIcon id="historico" size={21} /> Histórico</button>}
+      </nav>
 
       {profileOpen && <ProfileModal user={user} onClose={() => setProfileOpen(false)} onUpdated={onUserUpdate} membros={membros} onSaveMembros={saveMembrosCascade} access={access} />}
     </div>
