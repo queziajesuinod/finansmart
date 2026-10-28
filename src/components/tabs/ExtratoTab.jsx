@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { useState } from "react";
-import { C, todayStr, fmt, catById, entradasDoMes } from "../../lib/constants";
+import { C, todayStr, fmt, catById, entradasDoMes, aportesInvestimentoDoMes } from "../../lib/constants";
 import { parcelaEmprestimoNoMes } from "../../lib/finance";
 import { Card, Field, Inp, Sel, Btn, Empty, STitle, IcoTxt, MoneyInput } from "../ui";
-import { CatIcon, CreditCard, Pencil, Trash2, RefreshCw, Save, Wallet, BanknoteArrowDown } from "../../lib/icons.jsx";
+import { CatIcon, CreditCard, Pencil, Trash2, RefreshCw, Save, Wallet, BanknoteArrowDown, TrendingUp } from "../../lib/icons.jsx";
 import { MerchantIcon, CardBrandTile } from "../../lib/brandIcons.jsx";
 import { MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
 
-export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, cartoes, emprestimos = [], holerites = [], rendasExtras = [], temReceitas = false, monthIdx, year, setTab, membros = [] }) {
+export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, cartoes, emprestimos = [], investimentos = [], holerites = [], rendasExtras = [], temReceitas = false, monthIdx, year, setTab, membros = [] }) {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ descricao: "", valor: "", categoria: "outros", data: todayStr(), fixo: false });
   const [filtroMembro, setFiltroMembro] = useState("todos");
@@ -51,15 +51,18 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
     .filter((x) => x.p)
     .sort((a, b) => String(a.p.data || "").localeCompare(String(b.p.data || "")));
 
+  // Aportes de investimento que saíram da conta neste mês (pontuais/recorrentes).
+  const aportesInv = aportesInvestimentoDoMes(investimentos, year, monthIdx).filter((a) => pertenceAoMembro(a, filtroMembro, membros));
+
   // Entradas (receitas) do mês com a data em que caem.
   const entradas = entradasDoMes(holerites, rendasExtras, year, monthIdx).filter((e) => pertenceAoMembro(e, filtroMembro, membros));
   const totalEntradas = entradas.reduce((s, e) => s + e.valor, 0);
 
   const totalGeral = filtroMembro === "todos"
     ? totalDespesas
-    : despesasFiltradas.reduce((s, d) => s + d.valor, 0) + cartoesMes.reduce((s, c) => s + c.totalFiltrado, 0) + parcelasEmp.reduce((s, x) => s + x.p.valor, 0);
+    : despesasFiltradas.reduce((s, d) => s + d.valor, 0) + cartoesMes.reduce((s, c) => s + c.totalFiltrado, 0) + parcelasEmp.reduce((s, x) => s + x.p.valor, 0) + aportesInv.reduce((s, a) => s + a.valor, 0);
 
-  const semNada = !despesas.length && !cartoesMesAll.length && !(emprestimos || []).some((e) => parcelaEmprestimoNoMes(e, year, monthIdx)) && !entradasDoMes(holerites, rendasExtras, year, monthIdx).length;
+  const semNada = !despesas.length && !cartoesMesAll.length && !(emprestimos || []).some((e) => parcelaEmprestimoNoMes(e, year, monthIdx)) && !aportesInvestimentoDoMes(investimentos, year, monthIdx).length && !entradasDoMes(holerites, rendasExtras, year, monthIdx).length;
   if (semNada) return <Empty icon="" title="Extrato vazio" sub='Adicione despesas em "Lançamentos" ou importe uma fatura.' />;
 
   return (
@@ -110,6 +113,17 @@ export default function ExtratoTab({ despesas, setDespesasMk, totalDespesas, car
             <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Empréstimo · {p.data ? `vence ${new Date(p.data + "T12:00:00").toLocaleDateString("pt-BR")}` : "sem data de vencimento"}{temMembros ? <span style={{ color: C.accent, fontWeight: 700 }}> · {nomeMembro(emp.membroId, membros)}</span> : null}</div>
           </div>
           <div style={{ fontSize: 13, fontWeight: 800, color: "var(--danger)", flexShrink: 0 }}>- {fmt(p.valor)}</div>
+        </div>
+      ))}
+
+      {aportesInv.map((a) => (
+        <div key={a.id} onClick={() => setTab && setTab("investimentos")} style={{ background: C.surface, borderRadius: 13, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: `color-mix(in srgb, ${C.emerald} 10%, transparent)`, color: C.emerald, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><TrendingUp size={18} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Aporte · {a.descricao}</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Investimento{a.recorrente ? " recorrente" : ""} · {a.data ? new Date(a.data + "T12:00:00").toLocaleDateString("pt-BR") : "sem data"}{temMembros ? <span style={{ color: C.accent, fontWeight: 700 }}> · {nomeMembro(a.membroId, membros)}</span> : null}</div>
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--danger)", flexShrink: 0 }}>- {fmt(a.valor)}</div>
         </div>
       ))}
 

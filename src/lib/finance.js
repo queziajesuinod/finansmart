@@ -225,6 +225,22 @@ export function calcParcelasPagas(dataPrimeira, n) {
   return Math.min(n, Math.max(0, meses));
 }
 
+// Nº da parcela correspondente a uma DATA de amortização: quantas parcelas já
+// venceram até essa data (a amortização é aplicada "após" essa parcela). Usa a
+// data da 1ª parcela como âncora. Retorna null quando não dá para calcular
+// (sem data da 1ª parcela) — aí o nº da parcela é informado manualmente.
+export function parcelaDeData(emp, dataStr) {
+  if (!emp || !emp.dataPrimeira || !dataStr) return null;
+  const d1 = new Date(`${String(emp.dataPrimeira).slice(0, 10)}T12:00:00`);
+  const d = new Date(`${String(dataStr).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d1.getTime()) || Number.isNaN(d.getTime())) return null;
+  if (d < d1) return 0;
+  let k = (d.getFullYear() - d1.getFullYear()) * 12 + (d.getMonth() - d1.getMonth());
+  if (d.getDate() >= d1.getDate()) k += 1; // a parcela do mês já venceu nesse dia
+  const n = parseInt(emp.parcelas, 10) || k;
+  return Math.min(n, Math.max(0, k));
+}
+
 // Dia do mês em que a parcela do empréstimo vence: o informado ou o da 1ª parcela.
 export function diaVencimentoEmprestimo(emp) {
   const d = parseInt(emp && emp.diaVencimento, 10);

@@ -2,7 +2,7 @@
 import { useState, useMemo } from "react";
 import { C, MONTH_NAMES, CATEGORIES, fmt, fmtPct, tint } from "../../lib/constants";
 import { Card, Label, Badge, Bar, Empty, STitle, Divider } from "../ui";
-import { CatIcon, Wallet, ReceiptText, CreditCard, Landmark, ShoppingBag, CircleCheck, TriangleAlert, Siren } from "../../lib/icons.jsx";
+import { CatIcon, Wallet, ReceiptText, CreditCard, Landmark, ShoppingBag, CircleCheck, TriangleAlert, Siren, TrendingUp } from "../../lib/icons.jsx";
 import AssinaturasPanel from "../AssinaturasPanel.jsx";
 
 const STATUS_ICON = { superavit: CircleCheck, equilibrado: TriangleAlert, deficit: Siren };
@@ -33,7 +33,7 @@ function chartPaths(vals, W = 320, H = 118) {
   return { area, line, last: pts[n - 1] };
 }
 
-export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, rendaManualNum = 0, rendaHoleritesNum = 0, extraManualNum = 0, rendaExtrasMembrosNum = 0, membros = [], holerites = [], setHolerites, rendasExtras = [], setRendasExtras, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, totalEmprestimos, parcelVencendoMes, despesas, monthIdx, year, assinaturas, assinMinMeses, onAssinMinMeses, historicoMeses = [], setTab }) {
+export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, rendaManualNum = 0, rendaHoleritesNum = 0, extraManualNum = 0, rendaExtrasMembrosNum = 0, membros = [], holerites = [], setHolerites, rendasExtras = [], setRendasExtras, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, aportesInvestMes = 0, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, totalEmprestimos, parcelVencendoMes, despesas, monthIdx, year, assinaturas, assinMinMeses, onAssinMinMeses, historicoMeses = [], setTab }) {
   const chip = statusInfo ? (CHIP[statusInfo.statusIcon] || CHIP.equilibrado) : null;
 
   // Série de saldo (renda − despesas) dos últimos meses, para a evolução.
@@ -49,7 +49,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
   const txs = useMemo(() => [...(despesas || [])].sort((a, b) => String(b.data || "").localeCompare(String(a.data || ""))).slice(0, 4), [despesas]);
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* HERO — cartão-extrato com onda */}
       <section className="vg-card" aria-label="Previsão do mês">
         <svg className="vg-wave" viewBox="0 0 360 210" preserveAspectRatio="none" aria-hidden="true">
@@ -138,14 +138,15 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       </div>
 
       {/* Composição */}
-      {(parcelasMensais > 0 || parcelasCartaoMes > 0 || faturasCartaoMes > 0) && totalDespesas > 0 && (
-        <Card style={{ marginBottom: 14 }}>
+      {(parcelasMensais > 0 || parcelasCartaoMes > 0 || faturasCartaoMes > 0 || aportesInvestMes > 0) && totalDespesas > 0 && (
+        <Card>
           <STitle>Composição das despesas do mês</STitle>
           {[
             { l: "Lançamentos / gastos variáveis", v: despesasLancadas, c: C.amber, Icon: ReceiptText },
             { l: "Cartão pago no mês", v: faturasCartaoMes, c: C.indigo, Icon: CreditCard },
             { l: "Parcelas de empréstimos", v: parcelasMensais, c: C.rose, Icon: Landmark },
             { l: "Parcelas avulsas", v: parcelasCartaoMes, c: C.cyan, Icon: ShoppingBag },
+            { l: "Aportes de investimento", v: aportesInvestMes, c: C.emerald, Icon: TrendingUp },
           ].filter((x) => x.v > 0).map((x) => (
             <div key={x.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <span style={{ fontSize: 12, color: C.subtle, display: "flex", alignItems: "center", gap: 8 }}><x.Icon size={14} color={x.c} strokeWidth={2} /> {x.l}</span>
@@ -161,7 +162,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       )}
 
       {parcelVencendoMes.length > 0 && (
-        <div style={{ background: tint(C.cyan, 7), border: `1px solid ${tint(C.cyan, 20)}`, borderRadius: "var(--r-md)", padding: "12px 16px", marginBottom: 14 }}>
+        <div style={{ background: tint(C.cyan, 7), border: `1px solid ${tint(C.cyan, 20)}`, borderRadius: "var(--r-md)", padding: "12px 16px" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.cyan, marginBottom: 6 }}>Parcelamentos encerrando este mês</div>
           {parcelVencendoMes.map((p) => <div key={p.id} style={{ fontSize: 12, color: C.subtle, marginBottom: 3 }}>• {p.descricao} — parcela de {fmt(p.valorParcela)} ({p.totalParcelas}x)</div>)}
         </div>
@@ -169,7 +170,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
 
       {/* Categorias */}
       {porCategoria.length > 0 && (
-        <Card style={{ marginBottom: 14 }}>
+        <Card>
           <STitle>Gastos por categoria</STitle>
           {porCategoria.map((cat) => (
             <div key={cat.id} style={{ marginBottom: 13 }}>

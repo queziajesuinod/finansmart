@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes, addMonths } from "../lib/constants";
+import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes, addMonths, aportesInvestimentoNoMes } from "../lib/constants";
 import { calcParcelasPagas, emprestimoEstado, parcelaEmprestimoNoMes } from "../lib/finance";
 import * as api from "../lib/api";
 import DashboardTab from "./tabs/DashboardTab.jsx";
@@ -225,15 +225,17 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
 
   const parcelasCartaoMes = useMemo(() => parcelasAvulsasNoMes(year, monthIdx), [parcelados, cartoes, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
   const faturasCartaoMes = useMemo(() => faturasNoMes(year, monthIdx), [cartoes, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Aportes de investimento marcados como "saiu da conta" (pontuais/recorrentes).
+  const aportesInvestMes = useMemo(() => aportesInvestimentoNoMes(investimentos, year, monthIdx), [investimentos, year, monthIdx]);
 
-  const totalDespesas = despesasLancadas + parcelasMensais + parcelasCartaoMes + faturasCartaoMes;
+  const totalDespesas = despesasLancadas + parcelasMensais + parcelasCartaoMes + faturasCartaoMes + aportesInvestMes;
 
   const dim = daysInMonth(year, monthIdx);
   const dayNow = (year === today.getFullYear() && monthIdx === today.getMonth()) ? today.getDate() : dim;
   const pctMes = (dayNow / dim) * 100;
   const pctGasto = totalRenda > 0 ? (totalDespesas / totalRenda) * 100 : 0;
   const gastoDiario = useMemo(() => { if (!despesas.length || !dayNow) return 0; const maxD = Math.max(...despesas.map((d) => new Date(d.data + "T12:00:00").getDate()), 1); return despesasLancadas / maxD; }, [despesas, despesasLancadas, dayNow]);
-  const projecao = totalRenda - (gastoDiario * dim + parcelasMensais + parcelasCartaoMes + faturasCartaoMes);
+  const projecao = totalRenda - (gastoDiario * dim + parcelasMensais + parcelasCartaoMes + faturasCartaoMes + aportesInvestMes);
   const saldoAtual = totalRenda - totalDespesas;
   const totalEmprestimos = useMemo(() => emprestimos.reduce((s, e) => {
     const pago = e.pagoAuto !== false && e.dataPrimeira ? calcParcelasPagas(e.dataPrimeira, e.parcelas) : e.pago;
@@ -268,8 +270,8 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
     const d = new Date(year, monthIdx - 5 + i, 1);
     const m = d.getMonth(), y = d.getFullYear();
     const lancadas = (allDespesas[`${y}-${m}`] || []).reduce((s, x) => s + x.valor, 0);
-    return { label: MONTH_NAMES[m].slice(0, 3), despesas: lancadas + parcelasEmprestimosNoMes(y, m) + parcelasAvulsasNoMes(y, m) + faturasNoMes(y, m), renda: rendaNoMes(y, m) };
-  }), [allDespesas, holerites, rendasExtras, emprestimos, parcelados, cartoes, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { label: MONTH_NAMES[m].slice(0, 3), despesas: lancadas + parcelasEmprestimosNoMes(y, m) + parcelasAvulsasNoMes(y, m) + faturasNoMes(y, m) + aportesInvestimentoNoMes(investimentos, y, m), renda: rendaNoMes(y, m) };
+  }), [allDespesas, holerites, rendasExtras, emprestimos, parcelados, cartoes, investimentos, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Perfis para a importação: cadastrados ("Meus Cartões") + os derivados do
   // histórico de importações. Os cadastrados têm prioridade e trazem os 4 finais.
@@ -427,10 +429,10 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
         {erroSync && <div style={{ display: "flex", gap: 10, background: tint(C.red, 10), border: `1px solid ${tint(C.red, 25)}`, color: C.red, borderRadius: "var(--r-md)", padding: "11px 14px", fontSize: 12, marginBottom: 14 }}><TriangleAlert size={15} style={{ flexShrink: 0, marginTop: 1 }} />{erroSync}</div>}
 
         <div key={tab} className="tab-fade">
-        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} historicoMeses={historicoMeses} setTab={setTab} />}
+        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} aportesInvestMes={aportesInvestMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} historicoMeses={historicoMeses} setTab={setTab} />}
         {tab === "receitas" && tabPermitida("receitas") && <ReceitasTab totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} pctMes={pctMes} pctGasto={pctGasto} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} monthIdx={monthIdx} year={year} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
-        {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} emprestimos={emprestimos} holerites={holerites} rendasExtras={rendasExtras} temReceitas={tabPermitida("receitas")} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
+        {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} emprestimos={emprestimos} investimentos={investimentos} holerites={holerites} rendasExtras={rendasExtras} temReceitas={tabPermitida("receitas")} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
         {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} cardProfilesImport={cardProfiles} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} globalCategoryRules={globalCategoryRules} membros={membros} setMembros={saveMembros} temImportar temAssistente={modulos.includes("assistente")} access={access} year={year} monthIdx={monthIdx} />}
         {tab === "emprestimos" && tabPermitida("emprestimos") && <EmprestimosTab emprestimos={emprestimos} setEmprestimos={saveEmprestimos} membros={membros} />}
         {tab === "investimentos" && tabPermitida("investimentos") && <InvestimentosTab investimentos={investimentos} setInvestimentos={saveInvestimentos} membros={membros} year={year} monthIdx={monthIdx} />}

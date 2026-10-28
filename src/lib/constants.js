@@ -194,3 +194,30 @@ export function entradasDoMes(holerites, rendasExtras, year, monthIdx) {
     return a.data ? -1 : b.data ? 1 : 0;
   });
 }
+
+// Aportes de investimento que DEBITAM do caixa no mês (quando marcados como
+// "debitar"). Pontual: debita só no mês da aplicação. Recorrente: debita todo
+// mês a partir da data da aplicação. Retorna as saídas { id, descricao, valor, data }.
+export function aportesInvestimentoDoMes(investimentos, year, monthIdx) {
+  const alvo = year * 12 + monthIdx;
+  const ultimoDia = daysInMonth(year, monthIdx);
+  const out = [];
+  for (const v of Array.isArray(investimentos) ? investimentos : []) {
+    if (!v || !v.debita) continue;
+    const d = v.dataAplicacao ? new Date(`${String(v.dataAplicacao).slice(0, 10)}T12:00:00`) : null;
+    if (!d || Number.isNaN(d.getTime())) continue;
+    const inicio = d.getFullYear() * 12 + d.getMonth();
+    const val = Number(v.valorAplicado) || 0;
+    if (val <= 0) continue;
+    const bate = v.recorrente ? alvo >= inicio : alvo === inicio;
+    if (!bate) continue;
+    const dia = Math.min(d.getDate(), ultimoDia);
+    const data = v.recorrente ? `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}` : String(v.dataAplicacao).slice(0, 10);
+    out.push({ id: `inv-${v.id}-${alvo}`, descricao: [v.instituicao, v.nome].filter(Boolean).join(" · ") || "Aporte", valor: val, data, instituicao: v.instituicao, recorrente: !!v.recorrente, membroId: v.membroId || null });
+  }
+  return out.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+}
+
+export function aportesInvestimentoNoMes(investimentos, year, monthIdx) {
+  return aportesInvestimentoDoMes(investimentos, year, monthIdx).reduce((s, a) => s + a.valor, 0);
+}

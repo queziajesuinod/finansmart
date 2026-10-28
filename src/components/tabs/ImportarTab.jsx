@@ -418,8 +418,14 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
 
     const todas = items.map((i) => ({ descricao: i.descricao, valor: parseFloat(i.valor) || 0, data: i.data, categoria: i.categoria, parcelas: i.parcelas, parcelaAtual: i.parcelaAtual, portador: i.portador || "Titular", final: i.final || "", membroId: membroDoPortador(i.portador || "Titular"), id: genId() }));
 
-    // Dedup por DATA + VALOR contra o que já foi importado antes (reimport da mesma fatura).
-    const sig = (c) => `${c.data}|${Math.round((c.valor || 0) * 100)}`;
+    // Dedup contra o que já foi importado antes (reimport da mesma fatura).
+    // Assinatura = DATA + VALOR + COMERCIANTE. Sem o comerciante, duas compras
+    // distintas de mesma data e valor (ex.: dois cafés de R$ 10 no mesmo dia, ou
+    // compras de membros diferentes) eram tomadas como a mesma e UMA era
+    // descartada — "derrubando" o valor da fatura. Com o comerciante, a
+    // reimportação da MESMA fatura continua sendo deduplicada corretamente.
+    const normDesc = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 40);
+    const sig = (c) => `${c.data}|${Math.round((c.valor || 0) * 100)}|${normDesc(c.descricao)}`;
     const jaImportadas = new Set();
     (cartoes || []).forEach((ct) => (ct.compras || []).forEach((x) => jaImportadas.add(sig(x))));
     const compras = todas.filter((c) => !jaImportadas.has(sig(c)));

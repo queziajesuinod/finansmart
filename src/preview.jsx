@@ -35,6 +35,7 @@ const MOCK_STATE = {
   investimentos: [
     { id: 1, instituicao: "Nubank", nome: "Caixinha Turbo", tipo: "RF", indexador: "CDI", percentual: 100, valorAplicado: 15000, dataAplicacao: "2025-03-10", membroId: null, historico: [{ mesRef: "2026-10", saldo: 16820 }] },
     { id: 2, instituicao: "XP Investimentos", nome: "Tesouro Selic 2029", tipo: "RF", indexador: "SELIC", percentual: 100, valorAplicado: 8000, dataAplicacao: "2025-08-01", membroId: null, historico: [{ mesRef: "2026-10", saldo: 8540 }] },
+    { id: 3, instituicao: "Tesouro Direto", nome: "Aporte mensal", tipo: "RF", indexador: "SELIC", percentual: 100, valorAplicado: 500, dataAplicacao: "2026-02-01", membroId: null, debita: true, recorrente: true, historico: [{ mesRef: "2026-10", saldo: 4600 }] },
   ],
   cartoes: [{
     id: 1, nome: "Nubank Ultravioleta", banco: "Nubank", mesRef: "2026-9",
@@ -91,4 +92,8 @@ if (params.get("drawer")) {
 // Abre o painel de notificações quando ?notif=1.
 if (params.get("notif")) {
   setTimeout(() => { document.querySelector('button[aria-label="Notificações"]')?.click(); }, 500);
+}
+// Abre o form de amortização do 1º empréstimo quando ?amort=1.
+if (params.get("amort")) {
+  setTimeout(() => { [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Amortizar")?.click(); }, 500);
 }

@@ -47,7 +47,7 @@ function saldoEm(inv, mesRef) {
 }
 
 export default function InvestimentosTab({ investimentos = [], setInvestimentos, membros = [], year, monthIdx }) {
-  const EMPTY = { instituicao: "", nome: "", tipo: "RF", indexador: "CDI", percentual: "100", valorAplicado: "", dataAplicacao: todayStr(), membroId: null };
+  const EMPTY = { instituicao: "", nome: "", tipo: "RF", indexador: "CDI", percentual: "100", valorAplicado: "", dataAplicacao: todayStr(), membroId: null, debita: false, recorrente: false };
   const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -73,13 +73,15 @@ export default function InvestimentosTab({ investimentos = [], setInvestimentos,
       valorAplicado: valor,
       dataAplicacao: form.dataAplicacao || null,
       membroId: form.membroId || null,
+      debita: !!form.debita,
+      recorrente: !!(form.debita && form.recorrente),
       historico: atual ? (atual.historico || []) : [],
     };
     setInvestimentos(editId ? investimentos.map((v) => (v.id === editId ? entry : v)) : [...investimentos, entry]);
     setForm(EMPTY); setEditId(null); setShowForm(false);
   }
   function startEdit(v) {
-    setForm({ ...EMPTY, ...v, nome: v.nome || "", indexador: v.indexador || "CDI", percentual: v.percentual == null ? "" : String(v.percentual), valorAplicado: String(v.valorAplicado), dataAplicacao: v.dataAplicacao || "" });
+    setForm({ ...EMPTY, ...v, nome: v.nome || "", indexador: v.indexador || "CDI", percentual: v.percentual == null ? "" : String(v.percentual), valorAplicado: String(v.valorAplicado), dataAplicacao: v.dataAplicacao || "", debita: !!v.debita, recorrente: !!v.recorrente });
     setEditId(v.id); setShowForm(true);
   }
   function remove(id) { setInvestimentos(investimentos.filter((v) => v.id !== id)); }
@@ -168,6 +170,19 @@ export default function InvestimentosTab({ investimentos = [], setInvestimentos,
             <Field label="Data da Aplicação"><Inp type="date" value={form.dataAplicacao} onChange={f("dataAplicacao")} /></Field>
           </div>
           <MembroSelect membros={membros} value={form.membroId} onChange={(v) => setForm((p) => ({ ...p, membroId: v }))} label="De quem é esta aplicação?" style={{ marginBottom: 12 }} />
+          <div style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: "var(--r-md)", padding: "12px 14px", marginBottom: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!form.debita} onChange={(e) => setForm((p) => ({ ...p, debita: e.target.checked }))} />
+              <span style={{ fontSize: 12, color: C.subtle }}>Saiu da minha conta — lançar como saída no Extrato</span>
+            </label>
+            {form.debita && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 10 }}>
+                <input type="checkbox" checked={!!form.recorrente} onChange={(e) => setForm((p) => ({ ...p, recorrente: e.target.checked }))} />
+                <span style={{ fontSize: 12, color: C.subtle }}>Aporte recorrente — repete todo mês a partir da data</span>
+              </label>
+            )}
+            {form.debita && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 8, lineHeight: 1.4 }}>{form.recorrente ? "O valor será debitado em TODO mês a partir da data da aplicação." : "O valor será debitado uma vez, no mês da aplicação."}</div>}
+          </div>
           <div style={{ display: "flex", gap: 10 }}>
             <Btn onClick={submit} style={{ flex: 1 }}>{editId ? <IcoTxt Icon={Save}>Salvar</IcoTxt> : <IcoTxt Icon={Check}>Adicionar</IcoTxt>}</Btn>
             <Btn variant="ghost" onClick={() => { setShowForm(false); setEditId(null); setForm(EMPTY); }}>Cancelar</Btn>
@@ -193,6 +208,7 @@ export default function InvestimentosTab({ investimentos = [], setInvestimentos,
                   {inv.instituicao}
                   <span style={{ fontSize: 10, fontWeight: 700, color: C.cyan, background: "color-mix(in srgb, var(--info) 14%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{inv.tipo === "RV" ? "Renda Variável" : "Renda Fixa"}</span>
                   {temMembros && <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: "color-mix(in srgb, var(--accent) 12%, transparent)", padding: "2px 8px", borderRadius: 20 }}>{nomeMembro(inv.membroId, membros)}</span>}
+                  {inv.debita && <span style={{ fontSize: 10, fontWeight: 700, color: C.amber, background: "color-mix(in srgb, var(--warning) 14%, transparent)", padding: "2px 8px", borderRadius: "var(--r-xs)" }}>{inv.recorrente ? "Debita/mês" : "Debitado no mês"}</span>}
                 </div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{[inv.nome, rent, inv.dataAplicacao ? `aplicado em ${new Date(inv.dataAplicacao + "T12:00:00").toLocaleDateString("pt-BR")}` : ""].filter(Boolean).join(" · ")}</div>
               </div>

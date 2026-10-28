@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { C, fmt, fmtPct, genId, todayStr, tint } from "../../lib/constants";
-import { SISTEMAS, normSistema, calcParcela, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao, resumoEmprestimo, taxaMensalParaAnual, taxaAnualParaMensal, emprestimoEstado, emprestimoRows, diaVencimentoEmprestimo } from "../../lib/finance";
+import { SISTEMAS, normSistema, calcParcela, calcSaldoDevedor, calcParcelasPagas, calcDataQuitacao, resumoEmprestimo, taxaMensalParaAnual, taxaAnualParaMensal, emprestimoEstado, emprestimoRows, diaVencimentoEmprestimo, parcelaDeData } from "../../lib/finance";
 import { Card, Label, Field, Inp, Btn, Bar, Empty, STitle, Divider, IcoTxt, MoneyInput } from "../ui";
 import { Pencil, Trash2, Scale, TrendingDown, ReceiptText, BanknoteArrowDown, Check, Save, CircleCheck, Siren, RefreshCw, X } from "../../lib/icons.jsx";
 import { MembroSelect, MembroFilter, pertenceAoMembro, membrosOrdenados, nomeMembro } from "../Membros.jsx";
@@ -73,8 +73,12 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
       : { novoSaldo: 0, novaParcela: 0, novoPrazo: 0 };
     const temBanco = banco.novoSaldo > 0 || banco.novaParcela > 0 || banco.novoPrazo > 0;
     if (valor <= 0 && !temBanco) return;
+    // A parcela é derivada da DATA da amortização (quantas já venceram até lá).
+    // Sem data da 1ª parcela, usa o nº informado manualmente.
+    const kData = parcelaDeData(emp, amortForm.data);
+    const parcelaFinal = kData != null ? Math.max(1, kData) : Math.max(1, parseInt(amortForm.parcela) || 1);
     const item = {
-      id: genId(), data: amortForm.data || todayStr(), valor, tipo: amortForm.tipo === "parcela" ? "parcela" : "prazo", parcela: Math.max(1, parseInt(amortForm.parcela) || 1),
+      id: genId(), data: amortForm.data || todayStr(), valor, tipo: amortForm.tipo === "parcela" ? "parcela" : "prazo", parcela: parcelaFinal,
       ...(banco.novoSaldo > 0 ? { novoSaldo: banco.novoSaldo } : {}),
       ...(banco.novaParcela > 0 ? { novaParcela: banco.novaParcela } : {}),
       ...(banco.novoPrazo > 0 ? { novoPrazo: banco.novoPrazo } : {}),
@@ -301,10 +305,15 @@ export default function EmprestimosTab({ emprestimos, setEmprestimos, membros = 
                   ))}
                 </div>
                 <div className="form-grid-2">
-                  <Field label="Valor do aporte (R$)"><MoneyInput placeholder="0,00" value={amortForm.valor} onChange={(e) => setAmortForm((p) => ({ ...p, valor: e.target.value }))} /></Field>
-                  <Field label="Após a parcela nº"><Inp type="number" min={1} max={emp.parcelas} value={amortForm.parcela} onChange={(e) => setAmortForm((p) => ({ ...p, parcela: e.target.value }))} /></Field>
+                  <Field label="Valor amortizado (R$)"><MoneyInput placeholder="0,00" value={amortForm.valor} onChange={(e) => setAmortForm((p) => ({ ...p, valor: e.target.value }))} /></Field>
+                  <Field label="Data da amortização"><Inp type="date" value={amortForm.data} onChange={(e) => setAmortForm((p) => ({ ...p, data: e.target.value }))} /></Field>
                 </div>
-                <div style={{ fontSize: 10.5, color: C.muted, margin: "6px 0 10px", lineHeight: 1.4 }}>{amortForm.tipo === "parcela" ? "Mantém o número de parcelas e reduz o valor de cada uma." : "Mantém o valor da parcela e antecipa a quitação (menos parcelas)."}</div>
+                {(() => {
+                  const k = parcelaDeData(emp, amortForm.data);
+                  if (k == null) return <Field label="Após a parcela nº" style={{ marginTop: 10 }}><Inp type="number" min={1} max={emp.parcelas} value={amortForm.parcela} onChange={(e) => setAmortForm((p) => ({ ...p, parcela: e.target.value }))} /></Field>;
+                  return <div style={{ fontSize: 11, color: C.muted, margin: "8px 0 2px", display: "flex", alignItems: "center", gap: 6, lineHeight: 1.4 }}><CircleCheck size={13} style={{ color: C.emerald, flexShrink: 0 }} /> Aplicada após a <b style={{ color: C.subtle }}>&nbsp;parcela {k}</b>&nbsp;de {emp.parcelas} — calculado pela data da amortização.</div>;
+                })()}
+                <div style={{ fontSize: 10.5, color: C.muted, margin: "8px 0 10px", lineHeight: 1.4 }}>Informe o valor e a data que aparecem no extrato do banco. {amortForm.tipo === "parcela" ? "Mantém o número de parcelas e reduz o valor de cada uma." : "Mantém o valor da parcela e antecipa a quitação (menos parcelas)."}</div>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: amortForm.banco ? 10 : 12 }}>
                   <input type="checkbox" checked={!!amortForm.banco} onChange={(e) => setAmortForm((p) => ({ ...p, banco: e.target.checked }))} />
                   <span style={{ fontSize: 12, color: C.subtle }}>O cálculo não bateu com o banco — informar os valores do banco</span>
