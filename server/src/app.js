@@ -25,22 +25,28 @@ app.use(
 app.use(express.json({ limit: "5mb" }));
 app.use(passport.initialize());
 
-// API.
-app.use("/", routes);
-
 // ─── Servir o frontend (build do Vite) na mesma origem, em produção ──────────
 // Estrutura: /app/dist (frontend) e /app/server (backend). __dirname = server/src.
 const DIST = path.resolve(__dirname, "../../dist");
 const API_PREFIX = /^\/(auth|api|admin|plans|health)(\/|$)/;
+const temDist = fs.existsSync(DIST);
 
-if (fs.existsSync(DIST)) {
+// IMPORTANTE: /admin (exata) é a PÁGINA do Console no SPA e precisa ser servida
+// ANTES das rotas de API. O grupo /admin da API usa requireAuth; numa navegação
+// de browser (sem Bearer token) ele devolveria 401 "no_token". As CHAMADAS de API
+// do admin são sub-caminhos (/admin/overview, /admin/users, /admin/plans…) e
+// continuam indo para o router protegido normalmente.
+if (temDist) {
+  app.get(["/admin", "/admin/"], (req, res) => res.sendFile(path.join(DIST, "index.html")));
+}
+
+// API.
+app.use("/", routes);
+
+if (temDist) {
   app.use(express.static(DIST));
   // Fallback SPA: qualquer rota que não seja de API devolve o index.html.
   app.get("*", (req, res, next) => {
-    // /admin (exata) é a PÁGINA do Console de Administração no SPA — as rotas
-    // de API do admin são todas sub-caminhos (/admin/modules, /admin/users…),
-    // então o caminho exato fica livre para servir o front.
-    if (req.path === "/admin" || req.path === "/admin/") return res.sendFile(path.join(DIST, "index.html"));
     if (API_PREFIX.test(req.path)) return next();
     return res.sendFile(path.join(DIST, "index.html"));
   });
