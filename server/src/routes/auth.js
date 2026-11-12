@@ -11,6 +11,21 @@ const router = Router();
 router.post("/register", authLimiter, authController.register);
 router.post("/login", authLimiter, authController.login);
 
+// Renova a sessão (rotaciona o refresh cookie) e devolve um access token novo.
+// Rate limit alto o bastante p/ o uso normal (boot + expiração do token a cada 15min).
+router.post("/refresh", authController.refresh);
+router.post("/logout", authController.logout);
+
+// ─── Passkeys (WebAuthn) ─────────────────────────────────────
+// Login sem senha: endpoints públicos, protegidos por rate limit.
+router.post("/webauthn/login/options", authLimiter, authController.webauthnLoginOptions);
+router.post("/webauthn/login/verify", authLimiter, authController.webauthnLoginVerify);
+// Gerenciar as próprias passkeys (requer estar logado).
+router.post("/webauthn/register/options", requireAuth, authController.webauthnRegisterOptions);
+router.post("/webauthn/register/verify", requireAuth, authController.webauthnRegisterVerify);
+router.get("/webauthn/credentials", requireAuth, authController.webauthnList);
+router.delete("/webauthn/credentials/:id", requireAuth, authController.webauthnDelete);
+
 // Login com Google (só ativo se as credenciais estiverem configuradas).
 if (googleEnabled) {
   router.get("/google", passport.authenticate("google", { scope: ["profile", "email"], session: false }));

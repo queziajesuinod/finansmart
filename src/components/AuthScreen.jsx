@@ -4,10 +4,10 @@ import { C } from "../lib/constants";
 import { Card, Label, Inp, Btn, STitle } from "./ui";
 import { LogoTile } from "./Logo.jsx";
 import InstallPWA from "./InstallPWA.jsx";
-import { register, login, authConfig, googleLoginUrl, getPlans } from "../lib/api";
+import { register, login, authConfig, googleLoginUrl, getPlans, loginWithPasskey, webauthnSupported, webauthnAutofillSupported } from "../lib/api";
 import { maskCPF, maskPhone } from "../lib/masks";
 import { fmt } from "../lib/constants";
-import { Trash2, UserPlus, Users } from "../lib/icons.jsx";
+import { Trash2, UserPlus, Users, Fingerprint } from "../lib/icons.jsx";
 
 export default function AuthScreen({ onLogin }) {
   const [mode, setMode] = useState("login");
@@ -18,6 +18,7 @@ export default function AuthScreen({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
   const [cadastroPublico, setCadastroPublico] = useState(true);
+  const [passkeyOn, setPasskeyOn] = useState(false);
 
   useEffect(() => {
     authConfig().then((c) => { setGoogleEnabled(Boolean(c.googleEnabled)); setCadastroPublico(c.cadastroPublico !== false); if (c.cadastroPublico === false) setMode("login"); });
@@ -25,6 +26,20 @@ export default function AuthScreen({ onLogin }) {
     // Mostra erro se o callback do Google falhou.
     const p = new URLSearchParams(window.location.search);
     if (p.get("erro") === "google") setErr("Não foi possível entrar com o Google. Tente novamente.");
+
+    // Passkeys: mostra o botão se o navegador suporta e liga a sugestão
+    // (UI condicional) no campo de e-mail quando disponível.
+    let cancelled = false;
+    if (webauthnSupported()) {
+      setPasskeyOn(true);
+      webauthnAutofillSupported().then((ok) => {
+        if (ok && !cancelled) {
+          // Resolve quando o usuário escolhe uma passkey na sugestão do navegador.
+          loginWithPasskey({ autofill: true }).then((data) => { if (!cancelled) onLogin(data); }).catch(() => { /* ignorado: cancelou/sem passkey */ });
+        }
+      });
+    }
+    return () => { cancelled = true; };
   }, []);
 
   const onField = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -60,6 +75,18 @@ export default function AuthScreen({ onLogin }) {
     }
   }
 
+  async function handlePasskey() {
+    setErr("");
+    try {
+      const data = await loginWithPasskey();
+      onLogin(data);
+    } catch (e) {
+      // Usuário cancelou o prompt de biometria — não é erro a exibir.
+      if (e && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
+      setErr(e.message || "Não foi possível entrar com a passkey.");
+    }
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: `var(--bg)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter','Segoe UI',sans-serif", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
@@ -85,11 +112,25 @@ export default function AuthScreen({ onLogin }) {
             </>
           )}
 
+          {passkeyOn && mode === "login" && (
+            <>
+              <button type="button" onClick={handlePasskey} style={{ width: "100%", padding: "11px 18px", borderRadius: "var(--r-sm)", cursor: "pointer", fontSize: 13, fontWeight: 700, background: "var(--fill-2)", color: C.text, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <Fingerprint size={16} /> Entrar com Face ID / digital
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>
+                <div style={{ flex: 1, height: 1, background: C.border }} />
+                <span style={{ fontSize: 11, color: C.muted }}>ou com e-mail</span>
+                <div style={{ flex: 1, height: 1, background: C.border }} />
+              </div>
+            </>
+          )}
+
+          <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
           {mode === "register" && (
             <>
               <div style={{ marginBottom: 14 }}>
                 <Label>Nome completo</Label>
-                <Inp placeholder="Seu nome" value={form.nome} onChange={onField("nome")} />
+                <Inp name="name" autoComplete="name" placeholder="Seu nome" value={form.nome} onChange={onField("nome")} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
@@ -98,7 +139,7 @@ export default function AuthScreen({ onLogin }) {
                 </div>
                 <div>
                   <Label>Telefone</Label>
-                  <Inp placeholder="(00) 00000-0000" inputMode="tel" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} />
+                  <Inp name="tel" autoComplete="tel" placeholder="(00) 00000-0000" inputMode="tel" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} />
                 </div>
               </div>
 
@@ -124,19 +165,20 @@ export default function AuthScreen({ onLogin }) {
 
           <div style={{ marginBottom: 14 }}>
             <Label>E-mail</Label>
-            <Inp type="email" placeholder="seu@email.com" value={form.email} onChange={onField("email")} />
+            <Inp type="email" name="email" autoComplete="username webauthn" placeholder="seu@email.com" value={form.email} onChange={onField("email")} />
           </div>
 
           <div style={{ marginBottom: 20 }}>
             <Label>Senha</Label>
-            <Inp type="password" placeholder="••••••••" value={form.senha} onChange={onField("senha")} onKeyDown={(e) => e.key === "Enter" && handleSubmit()} />
+            <Inp type="password" name="password" autoComplete={mode === "register" ? "new-password" : "current-password"} placeholder="••••••••" value={form.senha} onChange={onField("senha")} />
           </div>
 
           {err && <div style={{ fontSize: 12, color: C.red, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>{err}</div>}
 
-          <Btn onClick={handleSubmit} disabled={loading} style={{ width: "100%" }}>
+          <Btn type="submit" disabled={loading} style={{ width: "100%" }}>
             {loading ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}
           </Btn>
+          </form>
 
           <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted }}>
             {cadastroPublico ? (

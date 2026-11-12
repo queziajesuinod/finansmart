@@ -1,12 +1,32 @@
 const crypto = require("crypto");
-const { User, Membro } = require("../models");
+const { User, Membro, WebauthnCredential } = require("../models");
 const { hashPassword, verifyPassword } = require("../utils/password");
-const { signToken } = require("../utils/jwt");
+const { signAccessToken } = require("../utils/jwt");
 const { getAccessState, ensureDefaultSubscription } = require("../services/access");
 const { getSetting } = require("../services/settings");
+const {
+  issueRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshFromRequest,
+  readRefreshCookie,
+  clearRefreshCookie,
+} = require("../services/refreshTokens");
+const webauthn = require("../services/webauthn");
 
 function tokenFor(user) {
-  return signToken({ sub: user.id, role: user.role });
+  return signAccessToken({ sub: user.id, role: user.role });
+}
+
+// Emite a sessão completa: access token curto (corpo) + refresh cookie httpOnly
+// (sessão longa, rotativa). Usado por login, cadastro, Google e passkey.
+async function issueSession(user, req, res) {
+  await issueRefreshToken(user.id, {
+    res,
+    userAgent: req.headers["user-agent"],
+    ip: req.ip,
+  });
+  const access = await getAccessState(user);
+  return { token: tokenFor(user), user: user.toSafeJSON(), access };
 }
 
 // POST /auth/register — cadastro manual com dados de cobrança.
@@ -55,8 +75,7 @@ async function register(req, res, next) {
     // Usuário novo já entra com uma assinatura ativa no plano padrão (Completo).
     await ensureDefaultSubscription(user.id);
 
-    const access = await getAccessState(user);
-    return res.status(201).json({ token: tokenFor(user), user: user.toSafeJSON(), access });
+    return res.status(201).json(await issueSession(user, req, res));
   } catch (err) {
     next(err);
   }
@@ -79,8 +98,42 @@ async function login(req, res, next) {
       return res.status(401).json({ error: "E-mail ou senha incorretos.", code: "invalid_credentials" });
     }
 
+    return res.json(await issueSession(user, req, res));
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/refresh — rotaciona o refresh cookie e devolve um access token novo.
+// É o que mantém a sessão viva sem o usuário ver a tela de login (e o que o front
+// chama no boot da página, já que o access token vive só na memória).
+async function refresh(req, res, next) {
+  try {
+    const rotated = await rotateRefreshToken(readRefreshCookie(req), {
+      res,
+      userAgent: req.headers["user-agent"],
+      ip: req.ip,
+    });
+    if (!rotated) {
+      return res.status(401).json({ error: "Sessão expirada. Entre novamente.", code: "no_refresh" });
+    }
+    const user = await User.findByPk(rotated.userId);
+    if (!user || !user.ativo) {
+      clearRefreshCookie(res);
+      return res.status(401).json({ error: "Usuário não encontrado ou inativo.", code: "no_user" });
+    }
     const access = await getAccessState(user);
     return res.json({ token: tokenFor(user), user: user.toSafeJSON(), access });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/logout — revoga a família do refresh e limpa o cookie.
+async function logout(req, res, next) {
+  try {
+    await revokeRefreshFromRequest(req, res);
+    return res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -97,14 +150,20 @@ async function me(req, res, next) {
 }
 
 // Chamado pelo callback do Google (passport já populou req.user).
-// Redireciona ao frontend com o token na query string.
-function googleCallback(req, res) {
-  const token = tokenFor(req.user);
-  const base = process.env.FRONTEND_URL || "http://127.0.0.1:4173";
-  // Token no FRAGMENTO (#), não na query (?): o fragmento não é enviado ao
-  // servidor (não entra em access log) nem vaza via header Referer. A SPA lê e
-  // limpa da URL logo em seguida.
-  return res.redirect(`${base}/#token=${encodeURIComponent(token)}&google=1`);
+// Seta o refresh cookie e redireciona ao front — o token NÃO vai mais na URL
+// (nada em access log / header Referer). A SPA pega o access token via /auth/refresh.
+async function googleCallback(req, res, next) {
+  try {
+    await issueRefreshToken(req.user.id, {
+      res,
+      userAgent: req.headers["user-agent"],
+      ip: req.ip,
+    });
+    const base = process.env.FRONTEND_URL || "http://127.0.0.1:4173";
+    return res.redirect(`${base}/?google=1`);
+  } catch (err) {
+    next(err);
+  }
 }
 
 // PUT /auth/profile — atualiza dados básicos do usuário.
@@ -147,4 +206,120 @@ async function changePassword(req, res, next) {
   }
 }
 
-module.exports = { register, login, me, googleCallback, tokenFor, updateProfile, changePassword };
+// ─── Passkeys (WebAuthn) ─────────────────────────────────────────────────────
+
+function passkeyLabel(cred, body) {
+  const custom = body && body.nome && String(body.nome).trim();
+  if (custom) return custom.slice(0, 60);
+  return cred.deviceType === "multiDevice" ? "Passkey sincronizada" : "Passkey deste aparelho";
+}
+
+// POST /auth/webauthn/register/options (logado) — opções p/ criar uma passkey.
+async function webauthnRegisterOptions(req, res, next) {
+  try {
+    const existing = await WebauthnCredential.findAll({ where: { userId: req.user.id } });
+    return res.json(await webauthn.registrationOptions(req.user, existing, res));
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/webauthn/register/verify (logado) — valida e salva a passkey.
+async function webauthnRegisterVerify(req, res, next) {
+  try {
+    const result = await webauthn.verifyRegistration(req.user, req.body && req.body.response, req, res);
+    if (!result.verified) {
+      return res.status(400).json({ error: result.error || "Não foi possível registrar a passkey.", code: "webauthn_failed" });
+    }
+    await WebauthnCredential.create({
+      userId: req.user.id,
+      ...result.credential,
+      nome: passkeyLabel(result.credential, req.body),
+    });
+    const list = await WebauthnCredential.findAll({ where: { userId: req.user.id }, order: [["createdAt", "ASC"]] });
+    return res.status(201).json({ passkeys: list.map((p) => p.toClientJSON()) });
+  } catch (err) {
+    if (err && err.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ error: "Essa passkey já está cadastrada.", code: "passkey_exists" });
+    }
+    next(err);
+  }
+}
+
+// GET /auth/webauthn/credentials (logado) — lista as passkeys do usuário.
+async function webauthnList(req, res, next) {
+  try {
+    const list = await WebauthnCredential.findAll({ where: { userId: req.user.id }, order: [["createdAt", "ASC"]] });
+    return res.json({ passkeys: list.map((p) => p.toClientJSON()) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /auth/webauthn/credentials/:id (logado) — remove uma passkey.
+async function webauthnDelete(req, res, next) {
+  try {
+    const n = await WebauthnCredential.destroy({ where: { id: req.params.id, userId: req.user.id } });
+    if (!n) return res.status(404).json({ error: "Passkey não encontrada.", code: "not_found" });
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/webauthn/login/options (público) — challenge p/ login sem senha.
+async function webauthnLoginOptions(req, res, next) {
+  try {
+    return res.json(await webauthn.authenticationOptions(res));
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/webauthn/login/verify (público) — valida a passkey e abre a sessão.
+async function webauthnLoginVerify(req, res, next) {
+  try {
+    const response = req.body && req.body.response;
+    const credId = response && response.id;
+    if (!credId) {
+      return res.status(400).json({ error: "Requisição inválida.", code: "bad_request" });
+    }
+    const record = await WebauthnCredential.findOne({ where: { credentialId: credId } });
+    if (!record) {
+      return res.status(401).json({ error: "Passkey não reconhecida.", code: "unknown_passkey" });
+    }
+    const result = await webauthn.verifyAuthentication(response, record, req, res);
+    if (!result.verified) {
+      return res.status(401).json({ error: result.error || "Falha no login com passkey.", code: "webauthn_failed" });
+    }
+    record.counter = result.newCounter;
+    record.lastUsedAt = new Date();
+    await record.save();
+
+    const user = await User.findByPk(record.userId);
+    if (!user || !user.ativo) {
+      return res.status(401).json({ error: "Usuário não encontrado ou inativo.", code: "no_user" });
+    }
+    return res.json(await issueSession(user, req, res));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  logout,
+  me,
+  googleCallback,
+  tokenFor,
+  updateProfile,
+  changePassword,
+  webauthnRegisterOptions,
+  webauthnRegisterVerify,
+  webauthnList,
+  webauthnDelete,
+  webauthnLoginOptions,
+  webauthnLoginVerify,
+};

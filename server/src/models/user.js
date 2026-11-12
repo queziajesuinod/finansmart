@@ -27,12 +27,15 @@ module.exports = (sequelize, DataTypes) => {
     User.hasMany(db.Parcelado, { foreignKey: "userId", as: "parcelados" });
     User.hasMany(db.Cartao, { foreignKey: "userId", as: "cartoes" });
     User.hasMany(db.Goal, { foreignKey: "userId", as: "goals" });
+    User.hasMany(db.RefreshToken, { foreignKey: "userId", as: "refreshTokens" });
+    User.hasMany(db.WebauthnCredential, { foreignKey: "userId", as: "passkeys" });
   };
 
-  // Nunca serializa segredos.
+  // Nunca serializa segredos. temSenha/temGoogle informam ao front quais métodos
+  // de login a conta já tem (ex: conta só-passkey não mostra "senha atual").
   User.prototype.toSafeJSON = function toSafeJSON() {
-    const { id, nome, email, role, cpf, telefone, ativo, googleId, createdAt } = this;
-    return { id, nome, email, role, cpf, telefone, ativo, temGoogle: Boolean(googleId), createdAt };
+    const { id, nome, email, role, cpf, telefone, ativo, googleId, senhaHash, createdAt } = this;
+    return { id, nome, email, role, cpf, telefone, ativo, temGoogle: Boolean(googleId), temSenha: Boolean(senhaHash), createdAt };
   };
 
   return User;

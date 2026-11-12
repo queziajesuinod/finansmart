@@ -2,9 +2,9 @@
 import { useState, useEffect } from "react";
 import { C, fmt } from "../lib/constants";
 import { Card, Label, Field, Inp, Btn, Divider, STitle, IcoTxt, Badge } from "./ui";
-import { X, Save, KeyRound, CircleUser, Users, WalletCards } from "../lib/icons.jsx";
+import { X, Save, KeyRound, CircleUser, Users, WalletCards, Fingerprint, Trash2, Plus } from "../lib/icons.jsx";
 import { maskCPF, maskPhone } from "../lib/masks";
-import { updateProfile, changePassword, getPlans } from "../lib/api";
+import { updateProfile, changePassword, getPlans, listPasskeys, registerPasskey, deletePasskey, webauthnSupported } from "../lib/api";
 import { MembrosManager } from "./Membros.jsx";
 
 export default function ProfileModal({ user, onClose, onUpdated, membros = [], onSaveMembros, access = null }) {
@@ -13,6 +13,29 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
   const [pMsg, setPMsg] = useState(""); const [pErr, setPErr] = useState("");
   const [sMsg, setSMsg] = useState(""); const [sErr, setSErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Passkeys (Face ID / digital).
+  const pkSupported = webauthnSupported();
+  const [passkeys, setPasskeys] = useState([]);
+  const [pkBusy, setPkBusy] = useState(false);
+  const [pkErr, setPkErr] = useState("");
+  useEffect(() => { if (pkSupported) listPasskeys().then((r) => setPasskeys(r.passkeys || [])).catch(() => {}); }, [pkSupported]);
+
+  async function addPasskey() {
+    setPkErr(""); setPkBusy(true);
+    try {
+      const r = await registerPasskey();
+      setPasskeys(r.passkeys || []);
+    } catch (e) {
+      if (!(e && (e.name === "NotAllowedError" || e.name === "AbortError"))) setPkErr(e.message || "Não foi possível adicionar a passkey.");
+    } finally { setPkBusy(false); }
+  }
+  async function removePasskey(id) {
+    setPkErr(""); setPkBusy(true);
+    try { await deletePasskey(id); setPasskeys((ps) => ps.filter((p) => p.id !== id)); }
+    catch (e) { setPkErr(e.message || "Não foi possível remover."); }
+    finally { setPkBusy(false); }
+  }
 
   // Plano atual + valor pago (base + dependentes × valor por dependente).
   const [plans, setPlans] = useState([]);
@@ -118,6 +141,33 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
           </div>
           <Msg ok={sMsg} err={sErr} />
           <Btn onClick={salvarSenha} disabled={busy} style={{ marginTop: 12 }}><IcoTxt Icon={KeyRound}>Alterar senha</IcoTxt></Btn>
+
+          {pkSupported && (
+            <>
+              <Divider />
+              <STitle><IcoTxt Icon={Fingerprint}>Chaves de acesso (passkeys)</IcoTxt></STitle>
+              <p style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>Entre com Face ID ou digital, sem senha. A chave fica guardada no seu aparelho — pode adicionar uma por dispositivo.</p>
+              {passkeys.length > 0 && (
+                <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                  {passkeys.map((p) => (
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px" }}>
+                      <Fingerprint size={16} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{p.nome}</div>
+                        <div style={{ fontSize: 10.5, color: C.muted }}>
+                          {p.backedUp ? "Sincronizada" : "Só neste aparelho"}
+                          {p.lastUsedAt ? ` · usada em ${new Date(p.lastUsedAt).toLocaleDateString("pt-BR")}` : ` · criada em ${new Date(p.createdAt).toLocaleDateString("pt-BR")}`}
+                        </div>
+                      </div>
+                      <button className="mini-act" aria-label="Remover passkey" disabled={pkBusy} onClick={() => removePasskey(p.id)} style={{ background: "color-mix(in srgb, var(--danger) 10%, transparent)", border: `1px solid color-mix(in srgb, var(--danger) 22%, transparent)`, borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {pkErr && <Msg err={pkErr} />}
+              <Btn variant="ghost" onClick={addPasskey} disabled={pkBusy} style={{ marginTop: 4 }}><IcoTxt Icon={Plus}>Adicionar Face ID / digital</IcoTxt></Btn>
+            </>
+          )}
 
           {onSaveMembros && (
             <>

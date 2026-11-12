@@ -5,7 +5,7 @@ import Dashboard from "./components/Dashboard.jsx";
 import LockedScreen from "./components/LockedScreen.jsx";
 import AdminTab from "./components/tabs/AdminTab.jsx";
 import { LoadingScreen } from "./components/Logo.jsx";
-import { getToken, setToken, me as fetchMe, logout as apiLogout } from "./lib/api.js";
+import { refresh as refreshSession, logout as apiLogout } from "./lib/api.js";
 
 export default function App() {
   const [session, setSession] = useState(null); // { user, access }
@@ -13,22 +13,16 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      // Retorno do login com Google: token no fragmento (#token=...).
-      const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
-      const urlToken = new URLSearchParams(hash).get("token");
-      if (urlToken) {
-        setToken(urlToken);
-        window.history.replaceState({}, "", window.location.pathname); // remove o fragmento da URL
+      // Volta do login com Google: só um marcador ?google=1 (o token vem pelo
+      // refresh cookie, não mais na URL). Limpa o marcador da barra de endereços.
+      if (new URLSearchParams(window.location.search).has("google")) {
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
       }
 
-      if (getToken()) {
-        try {
-          const data = await fetchMe();
-          setSession(data);
-        } catch {
-          apiLogout();
-        }
-      }
+      // Restaura a sessão pelo refresh cookie httpOnly (login manual, Google ou
+      // passkey anteriores). Sem cookie válido → cai na tela de login.
+      const data = await refreshSession();
+      if (data && data.user) setSession({ user: data.user, access: data.access });
       setLoading(false);
     })();
   }, []);

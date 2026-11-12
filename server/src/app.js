@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const { passport } = require("./config/passport");
 const routes = require("./routes");
 const errorHandler = require("./middleware/error");
@@ -23,6 +24,8 @@ app.use(
 // As coleções são salvas inteiras (replace-all) e as faturas acumulam mês a mês:
 // o limite padrão de 100 KB do express.json estouraria com o uso normal.
 app.use(express.json({ limit: "5mb" }));
+// Lê o refresh cookie (sessão longa) e o challenge de WebAuthn.
+app.use(cookieParser());
 app.use(passport.initialize());
 
 // ─── Servir o frontend (build do Vite) na mesma origem, em produção ──────────

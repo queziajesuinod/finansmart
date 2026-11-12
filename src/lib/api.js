@@ -1,16 +1,54 @@
 // @ts-nocheck
-// Cliente da API do FinançaSmart. Guarda o JWT no localStorage e converte
-// os dados entre o formato do backend e o formato usado pelo frontend.
+// Cliente da API do FinançaSmart. O access token (JWT) é curto e vive SÓ na
+// memória (nunca no localStorage) — brecha mínima caso haja XSS. A sessão longa
+// fica num refresh cookie httpOnly rotativo: quando o access token expira, o
+// request() chama /auth/refresh em silêncio e repete a chamada.
+import {
+  startRegistration,
+  startAuthentication,
+  browserSupportsWebAuthn,
+  browserSupportsWebAuthnAutofill,
+} from "@simplewebauthn/browser";
 
 // Em produção o backend serve o próprio frontend, então VITE_API_URL="" (mesma origem).
 // Em dev, sem a variável, aponta para o backend local.
 const API_URL = (import.meta.env && import.meta.env.VITE_API_URL !== undefined) ? import.meta.env.VITE_API_URL : "http://127.0.0.1:3333";
-const TOKEN_KEY = "finansmart:token";
 
-export function getToken() { return localStorage.getItem(TOKEN_KEY); }
-export function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); }
-export function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+// Access token em memória (não persiste). Recarregar a página o zera — o boot
+// refaz o /auth/refresh pelo cookie.
+let accessToken = null;
+export function getToken() { return accessToken; }
+export function setToken(t) { accessToken = t || null; }
+export function clearToken() { accessToken = null; }
 export const googleLoginUrl = `${API_URL}/auth/google`;
+
+// Renovação single-flight: várias chamadas que levam 401 ao mesmo tempo
+// compartilham um único /auth/refresh em vez de dispararem vários.
+let refreshPromise = null;
+async function rawRefresh() {
+  try {
+    const res = await fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) { accessToken = null; return null; }
+    const data = await res.json();
+    accessToken = data.token || null;
+    return data; // { token, user, access }
+  } catch {
+    accessToken = null;
+    return null;
+  }
+}
+function refreshSession() {
+  if (!refreshPromise) refreshPromise = rawRefresh().finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
+// Endpoints de entrada de sessão: um 401 aqui é "credencial inválida", não
+// "token expirado" — não faz sentido tentar refresh (evita loop).
+const NO_REFRESH = /^\/auth\/(login|register|refresh|logout|webauthn\/login)/;
 
 // Revisão de cada coleção, como veio do servidor. Vai em X-Data-Rev nos PUTs de
 // /api/<coleção>; se outro aparelho salvou depois, o servidor responde 409
@@ -19,18 +57,24 @@ const revs = {};
 let revsCarregadas = false;
 const chaveRev = (method, path) => (method === "PUT" && path.startsWith("/api/") ? path.slice(5).replace(/-/g, "_") : null);
 
-async function request(method, path, body) {
-  const token = getToken();
+async function request(method, path, body, _retried = false) {
   const chave = chaveRev(method, path);
   const res = await fetch(`${API_URL}${path}`, {
     method,
+    credentials: "include", // envia/recebe o refresh cookie httpOnly
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(chave && revsCarregadas ? { "X-Data-Rev": String(revs[chave] ?? 0) } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
+  // Access token expirado: renova pelo cookie (uma vez) e repete a chamada.
+  if (res.status === 401 && !_retried && !NO_REFRESH.test(path)) {
+    const refreshed = await refreshSession();
+    if (refreshed) return request(method, path, body, true);
+  }
 
   let data = null;
   try { data = await res.json(); } catch { /* sem corpo */ }
@@ -64,9 +108,39 @@ export async function login(payload) {
 export async function me() {
   return request("GET", "/auth/me"); // { user, access }
 }
+// Boot/reabertura: tenta restaurar a sessão pelo refresh cookie. null se não há sessão.
+export async function refresh() {
+  return refreshSession(); // { token, user, access } | null
+}
 export function updateProfile(payload) { return request("PUT", "/auth/profile", payload); } // { user }
 export function changePassword(payload) { return request("POST", "/auth/change-password", payload); }
-export function logout() { clearToken(); }
+export async function logout() {
+  try { await request("POST", "/auth/logout"); } catch { /* best-effort */ }
+  clearToken();
+}
+
+// ─── Passkeys (WebAuthn) ─────────────────────────────────────
+export function webauthnSupported() { return browserSupportsWebAuthn(); }
+export function webauthnAutofillSupported() { return browserSupportsWebAuthnAutofill(); }
+
+// Cria uma passkey para a conta logada (pede Face ID / digital).
+export async function registerPasskey(nome) {
+  const options = await request("POST", "/auth/webauthn/register/options");
+  const response = await startRegistration({ optionsJSON: options });
+  return request("POST", "/auth/webauthn/register/verify", { response, nome }); // { passkeys }
+}
+
+// Login sem senha. Se autofill=true, usa a UI condicional (sugestão no campo).
+export async function loginWithPasskey({ autofill = false } = {}) {
+  const options = await request("POST", "/auth/webauthn/login/options");
+  const response = await startAuthentication({ optionsJSON: options, useBrowserAutofill: autofill });
+  const data = await request("POST", "/auth/webauthn/login/verify", { response });
+  setToken(data.token);
+  return data; // { token, user, access }
+}
+
+export function listPasskeys() { return request("GET", "/auth/webauthn/credentials"); } // { passkeys }
+export function deletePasskey(id) { return request("DELETE", `/auth/webauthn/credentials/${id}`); }
 
 // ─── Estado (dados do domínio) ───────────────────────────────
 const numToInput = (n) => (n && Number(n) !== 0 ? String(n) : "");
