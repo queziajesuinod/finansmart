@@ -245,6 +245,9 @@ export function saveHolerites(arr) { return request("PUT", "/api/holerites", arr
 export function saveRendasExtras(arr) { return request("PUT", "/api/rendas-extras", arr || []); }
 export function saveInvestimentos(arr) { return request("PUT", "/api/investimentos", arr || []); }
 
+// "Começar do zero": apaga todas as coleções financeiras (só o titular). Destrutivo.
+export function resetAllData() { return request("POST", "/api/reset", { confirmacao: true }); }
+
 // ─── Leitura de fatura com IA (reforço) ──────────────────────
 // Envia o texto já extraído do PDF (o PDF não sai do dispositivo) e recebe as
 // compras estruturadas. refMonth é 1-12.

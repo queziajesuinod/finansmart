@@ -57,8 +57,9 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
   };
   const corOrc = (pct) => (pct >= 100 ? C.red : pct >= 80 ? C.amber : C.emerald);
   const [orcAberto, setOrcAberto] = useState(false);
-  // Só mostra categorias com limite definido quando fechado; todas quando aberto (p/ editar).
-  const orcVisiveis = orcAberto ? orcamentos : orcamentos.filter((o) => o.limite > 0);
+  // "Gastos por categoria" (gasto do mês + orçamento integrado): mostra categorias
+  // com gasto OU limite, maior gasto primeiro.
+  const catView = useMemo(() => orcamentos.filter((o) => o.gasto > 0 || o.limite > 0).sort((a, b) => b.gasto - a.gasto), [orcamentos]);
 
   // Previsão de fluxo: meses no vermelho e escala das barras.
   const fpNeg = (fluxoPrevisto || []).filter((f) => f.saldo < 0).length;
@@ -91,12 +92,25 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
           </div>
           <div className="vg-bal" style={projecao < 0 ? { color: "#FFB3C1" } : null}><small>R$</small>{fmtNum(projecao)}</div>
           <div className="vg-desc">{statusInfo ? statusInfo.desc : "Informe sua renda para ver a projeção do mês."}</div>
-          <div className="vg-splits">
-            <div className="vg-split"><div className="l"><span className="vg-dot" style={{ background: "#9DF2CF" }} />Renda</div><div className="v">{fmt(totalRenda)}</div></div>
-            <div className="vg-split"><div className="l"><span className="vg-dot" style={{ background: "#FFD79A" }} />Gasto</div><div className="v">{fmt(totalDespesas)}</div></div>
-          </div>
         </div>
       </section>
+
+      {/* KPIs — leitura rápida do mês */}
+      {(totalRenda > 0 || totalDespesas > 0) && (
+        <div className="stat-grid">
+          {[
+            { label: "Saldo atual", v: saldoAtual, c: saldoAtual < 0 ? C.red : C.emerald, Icon: PiggyBank, hint: "Renda − gastos até agora" },
+            { label: "Gasto do mês", v: totalDespesas, c: C.amber, Icon: ReceiptText, hint: totalRenda > 0 ? `${fmtPct(pctGasto)} da renda` : null },
+            { label: "Entrou", v: totalRenda, c: C.indigo, Icon: Wallet, hint: "Renda do mês" },
+          ].map((k) => (
+            <div key={k.label} style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: "var(--r-md)", padding: "12px 14px", boxShadow: "var(--shadow-sm)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 10.5, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".04em" }}><k.Icon size={13} color={k.c} strokeWidth={2.2} /> {k.label}</div>
+              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.02em", marginTop: 5, color: k.c, fontVariantNumeric: "tabular-nums" }}>{fmt(k.v)}</div>
+              {k.hint && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>{k.hint}</div>}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="cols-desk">
       {/* EVOLUÇÃO DO SALDO */}
@@ -172,7 +186,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
             <div key={i} style={{ marginBottom: 11 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600 }}>{f.label}/{f.ano}</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: f.saldo < 0 ? C.red : C.emerald }}>{f.saldo < 0 ? "−" : "+"}{fmt(Math.abs(f.saldo))}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: f.saldo < 0 ? C.red : C.emerald, fontVariantNumeric: "tabular-nums" }}>{f.saldo < 0 ? "−" : "+"}{fmt(Math.abs(f.saldo))}</span>
               </div>
               <Bar pct={(Math.abs(f.saldo) / fpMaxAbs) * 100} color={f.saldo < 0 ? C.red : C.emerald} />
             </div>
@@ -211,49 +225,49 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
         </div>
       )}
 
-      {/* Categorias */}
-      {porCategoria.length > 0 && (
+      {/* Gastos por categoria — com orçamento integrado (ver × definir limites) */}
+      {(catView.length > 0 || setBudgets) && (
         <Card>
-          <STitle>Gastos por categoria</STitle>
-          {porCategoria.map((cat) => (
-            <div key={cat.id} style={{ marginBottom: 13 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, alignItems: "center" }}>
-                <span style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><CatIcon id={cat.id} size={16} color={cat.color} /> {cat.label}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 10, color: C.muted }}>{totalRenda > 0 ? fmtPct(cat.total / totalRenda * 100) : "—"}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: cat.color }}>{fmt(cat.total)}</span>
-                </div>
-              </div>
-              <Bar pct={totalRenda > 0 ? cat.total / totalRenda * 100 : 0} color={cat.color} />
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {/* ORÇAMENTO POR CATEGORIA */}
-      {setBudgets && (
-        <Card>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
-            <STitle style={{ marginBottom: 0 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><PiggyBank size={16} color={C.primary} /> Orçamento por categoria</span></STitle>
-            <button onClick={() => setOrcAberto((v) => !v)} style={{ background: "none", border: 0, color: C.primary, fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}>{orcAberto ? "Concluir" : "Definir limites"}</button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: orcAberto ? 4 : 12 }}>
+            <STitle style={{ marginBottom: 0 }}>Gastos por categoria</STitle>
+            {setBudgets && <button onClick={() => setOrcAberto((v) => !v)} style={{ background: "none", border: 0, color: C.primary, fontSize: 11.5, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}><PiggyBank size={13} /> {orcAberto ? "Concluir" : "Definir limites"}</button>}
           </div>
-          <p style={{ fontSize: 11, color: C.muted, margin: "2px 0 12px", lineHeight: 1.5 }}>Defina um teto mensal por categoria e acompanhe quanto já usou em {MONTH_NAMES[monthIdx]}.</p>
-          {orcVisiveis.length === 0 && !orcAberto && (
-            <div style={{ fontSize: 12, color: C.muted }}>Nenhum limite definido ainda. Toque em <b>Definir limites</b>.</div>
-          )}
-          {orcVisiveis.map((o) => (
-            <div key={o.id} style={{ marginBottom: 13 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><CatIcon id={o.id} size={16} color={o.color} /> {o.label}</span>
-                {orcAberto ? (
+
+          {orcAberto ? (
+            <>
+              <p style={{ fontSize: 11, color: C.muted, margin: "0 0 12px", lineHeight: 1.5 }}>Defina um teto mensal por categoria. Quem tiver limite ganha uma barra de acompanhamento em {MONTH_NAMES[monthIdx]}.</p>
+              {orcamentos.map((o) => (
+                <div key={o.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><CatIcon id={o.id} size={16} color={o.color} /> {o.label}</span>
                   <div style={{ width: 120 }}><MoneyInput value={o.limite || ""} onChange={(v) => setLimite(o.id, v)} placeholder="Sem limite" style={{ padding: "7px 10px", fontSize: 12.5, textAlign: "right" }} /></div>
-                ) : (
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: corOrc(o.pct) }}>{fmt(o.gasto)} <span style={{ color: C.muted, fontWeight: 600 }}>/ {fmt(o.limite)}</span></span>
-                )}
-              </div>
-              {o.limite > 0 && <Bar pct={Math.min(100, o.pct)} color={corOrc(o.pct)} />}
-            </div>
-          ))}
+                </div>
+              ))}
+            </>
+          ) : catView.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.muted }}>Sem gastos registrados neste mês.</div>
+          ) : (
+            catView.map((o) => {
+              const temLimite = o.limite > 0;
+              const cor = temLimite ? corOrc(o.pct) : o.color;
+              return (
+                <div key={o.id} style={{ marginBottom: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><CatIcon id={o.id} size={16} color={o.color} /> {o.label}</span>
+                    {temLimite ? (
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: cor, fontVariantNumeric: "tabular-nums" }}>{fmt(o.gasto)} <span style={{ color: C.muted, fontWeight: 600 }}>/ {fmt(o.limite)}</span></span>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 10, color: C.muted }}>{totalRenda > 0 ? fmtPct(o.gasto / totalRenda * 100) : "—"}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: cor, fontVariantNumeric: "tabular-nums" }}>{fmt(o.gasto)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <Bar pct={temLimite ? Math.min(100, o.pct) : (totalRenda > 0 ? o.gasto / totalRenda * 100 : 0)} color={cor} />
+                  {temLimite && o.pct >= 100 && <div style={{ fontSize: 10.5, color: C.red, fontWeight: 700, marginTop: 3 }}>Estourou o limite</div>}
+                </div>
+              );
+            })
+          )}
         </Card>
       )}
 

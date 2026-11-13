@@ -4,7 +4,7 @@ import { C, fmt } from "../lib/constants";
 import { Card, Label, Field, Inp, Btn, Divider, STitle, IcoTxt, Badge } from "./ui";
 import { X, Save, KeyRound, CircleUser, Users, WalletCards, Fingerprint, Trash2, Plus, Smartphone, LogOut, Bell } from "../lib/icons.jsx";
 import { maskCPF, maskPhone } from "../lib/masks";
-import { updateProfile, changePassword, getPlans, listPasskeys, registerPasskey, deletePasskey, webauthnSupported, listSessions, revokeSession, householdMembers, createHouseholdInvite, revokeHouseholdInvite, setMemberRole, removeMember } from "../lib/api";
+import { updateProfile, changePassword, getPlans, listPasskeys, registerPasskey, deletePasskey, webauthnSupported, listSessions, revokeSession, householdMembers, createHouseholdInvite, revokeHouseholdInvite, setMemberRole, removeMember, resetAllData } from "../lib/api";
 import { pushSupported, pushStatus, enablePush, disablePush } from "../lib/push";
 
 const ROLE_LABEL = { owner: "Titular", admin: "Admin", member: "Membro", viewer: "Visualizador" };
@@ -105,6 +105,18 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
   }
   async function revogarConvite(id) {
     try { await revokeHouseholdInvite(id); recarregarFam(); } catch { /* ignore */ }
+  }
+
+  // Zona de perigo: limpar todos os dados (só o titular).
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetErr, setResetErr] = useState("");
+  async function limparTudo() {
+    setResetErr("");
+    if (resetConfirm.trim().toUpperCase() !== "APAGAR") { setResetErr('Digite APAGAR para confirmar.'); return; }
+    setResetBusy(true);
+    try { await resetAllData(); window.location.reload(); }
+    catch (e) { setResetErr(e.message || "Não foi possível limpar os dados."); setResetBusy(false); }
   }
 
   // Notificações push.
@@ -374,6 +386,25 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
               <STitle><IcoTxt Icon={Users}>Familiares / dependentes</IcoTxt></STitle>
               <p style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>Adicione familiares para gerir as finanças deles na mesma conta. Os extratos e empréstimos ficam separados por pessoa. O valor da assinatura aumenta conforme o número de dependentes. <strong style={{ color: C.subtle }}>Ao remover um dependente, os lançamentos dele voltam para o principal e o valor é reduzido.</strong></p>
               <MembrosManager membros={membros} onSave={onSaveMembros} saving={busy} access={access} />
+            </>
+          )}
+
+          {/* Zona de perigo: começar do zero (só o titular). */}
+          {user.isOwner && (
+            <>
+              <Divider />
+              <STitle><IcoTxt Icon={Trash2}>Começar do zero</IcoTxt></STitle>
+              <div style={{ background: "color-mix(in srgb, var(--danger) 7%, transparent)", border: `1px solid color-mix(in srgb, var(--danger) 25%, transparent)`, borderRadius: 12, padding: "14px 16px" }}>
+                <p style={{ fontSize: 12, color: C.subtle, lineHeight: 1.6, marginBottom: 12 }}>
+                  Apaga <strong>todos</strong> os lançamentos, cartões, empréstimos, parcelados, receitas, investimentos, metas e orçamentos da família — para recomeçar a gestão do zero. <strong style={{ color: C.red }}>Esta ação não pode ser desfeita.</strong> Sua conta, os familiares e o acesso continuam.
+                </p>
+                <Label>Digite <strong>APAGAR</strong> para confirmar</Label>
+                <Inp value={resetConfirm} onChange={(e) => setResetConfirm(e.target.value)} placeholder="APAGAR" style={{ marginBottom: 10 }} />
+                {resetErr && <Msg err={resetErr} />}
+                <Btn onClick={limparTudo} disabled={resetBusy || resetConfirm.trim().toUpperCase() !== "APAGAR"} style={{ width: "100%", background: C.red, borderColor: C.red }}>
+                  <IcoTxt Icon={Trash2}>{resetBusy ? "Apagando..." : "Limpar todos os dados"}</IcoTxt>
+                </Btn>
+              </div>
             </>
           )}
         </Card>

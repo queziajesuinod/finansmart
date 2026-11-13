@@ -30,6 +30,9 @@ router.put("/holerites", requireWrite, c.putHolerites);
 router.put("/rendas-extras", requireWrite, c.putRendasExtras);
 router.put("/investimentos", requireWrite, c.putInvestimentos);
 
+// "Começar do zero": apaga todas as coleções financeiras do household (só o titular).
+router.post("/reset", requireWrite, c.resetData);
+
 // Log de importação (métricas + correções) — alimenta a análise do admin.
 router.post("/import-log", c.postImportLog);
 

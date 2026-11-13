@@ -329,6 +329,32 @@ async function putCategoryRules(req, res, next) {
   }
 }
 
+// POST /api/reset — "começar do zero": apaga TODAS as coleções financeiras do
+// household. Mantém a conta, os familiares (membros), a assinatura e os acessos
+// (passkeys/sessões). Só o TITULAR pode zerar — e exige confirmação explícita.
+async function resetData(req, res, next) {
+  if (req.householdRole !== "owner") {
+    return res.status(403).json({ error: "Só o titular da família pode limpar os dados.", code: "forbidden" });
+  }
+  if (!req.body || req.body.confirmacao !== true) {
+    return res.status(400).json({ error: "Confirmação obrigatória.", code: "confirmation_required" });
+  }
+  const userId = req.dataOwnerId;
+  const t = await sequelize.transaction();
+  try {
+    // Coleções financeiras (Cartao em cascata apaga Compra). NÃO apaga Membro.
+    const models = [Income, Despesa, Emprestimo, Parcelado, Cartao, Goal, Budget, CategoryRule, CardProfile, Holerite, RendaExtra, Investimento];
+    for (const M of models) await M.destroy({ where: { userId }, transaction: t });
+    // Zera as revisões p/ o cliente recarregar do zero sem conflito de versão.
+    await DataRev.destroy({ where: { userId }, transaction: t });
+    await t.commit();
+    res.json({ ok: true });
+  } catch (err) {
+    await t.rollback();
+    next(err);
+  }
+}
+
 // Registra um log de importação (métricas parse-vs-confirmado + correções de
 // categoria). Chamado pelo cliente ao confirmar uma importação de fatura.
 async function postImportLog(req, res, next) {
@@ -355,4 +381,4 @@ async function postImportLog(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putBudgets, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras, putInvestimentos, postImportLog };
+module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putBudgets, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras, putInvestimentos, resetData, postImportLog };
