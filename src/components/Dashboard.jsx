@@ -1,19 +1,21 @@
 // @ts-nocheck
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes, addMonths, aportesInvestimentoNoMes } from "../lib/constants";
+import { useState, useMemo, useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import { C, MONTH_NAMES, today, daysInMonth, CATEGORIES, salarioVigente, tint, holeritesVigentes, rendaHolerite, rendasExtrasDoMes, addMonths, aportesInvestimentoNoMes, mesRefDe } from "../lib/constants";
 import { calcParcelasPagas, emprestimoEstado, parcelaEmprestimoNoMes } from "../lib/finance";
 import * as api from "../lib/api";
+// A Visão Geral é a aba inicial → carregada direto. As demais vêm sob demanda
+// (code-splitting) p/ aliviar o bundle inicial, importante no mobile.
 import DashboardTab from "./tabs/DashboardTab.jsx";
-import ReceitasTab from "./tabs/ReceitasTab.jsx";
-import InvestimentosTab from "./tabs/InvestimentosTab.jsx";
-import LancamentosTab from "./tabs/LancamentosTab.jsx";
-import ExtratoTab from "./tabs/ExtratoTab.jsx";
-import CartoesTab from "./tabs/CartoesTab.jsx";
-import EmprestimosTab from "./tabs/EmprestimosTab.jsx";
-import MetasTab from "./tabs/MetasTab.jsx";
-import HistoricoTab from "./tabs/HistoricoTab.jsx";
-import AssistenteTab from "./tabs/AssistenteTab.jsx";
-import AdminTab from "./tabs/AdminTab.jsx";
+const ReceitasTab = lazy(() => import("./tabs/ReceitasTab.jsx"));
+const InvestimentosTab = lazy(() => import("./tabs/InvestimentosTab.jsx"));
+const LancamentosTab = lazy(() => import("./tabs/LancamentosTab.jsx"));
+const ExtratoTab = lazy(() => import("./tabs/ExtratoTab.jsx"));
+const CartoesTab = lazy(() => import("./tabs/CartoesTab.jsx"));
+const EmprestimosTab = lazy(() => import("./tabs/EmprestimosTab.jsx"));
+const MetasTab = lazy(() => import("./tabs/MetasTab.jsx"));
+const HistoricoTab = lazy(() => import("./tabs/HistoricoTab.jsx"));
+const AssistenteTab = lazy(() => import("./tabs/AssistenteTab.jsx"));
+const AdminTab = lazy(() => import("./tabs/AdminTab.jsx"));
 import { TabIcon } from "../lib/icons.jsx";
 import { LogoTile, Wordmark, LoadingScreen } from "./Logo.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
@@ -39,6 +41,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
   const [membros, setMembros] = useState([]);
   const [emprestimos, setEmprestimos] = useState([]);
   const [goals, setGoals] = useState([]);
+  const [budgets, setBudgets] = useState([]);
   const [parcelados, setParcelados] = useState([]);
   const [cartoes, setCartoes] = useState([]);
   const [categoryRules, setCategoryRules] = useState({});
@@ -60,6 +63,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
     setMembros(s.membros || []);
     setEmprestimos(s.emprestimos);
     setGoals(s.goals);
+    setBudgets(s.budgets || []);
     setParcelados(s.parcelados);
     setCartoes(s.cartoes);
     setCategoryRules(s.categoryRules || {});
@@ -122,6 +126,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
   const saveDespesas = useCallback(persist(setAllDespesas, api.saveDespesas), [persist]);
   const saveEmprestimos = useCallback(persist(setEmprestimos, api.saveEmprestimos), [persist]);
   const saveGoals = useCallback(persist(setGoals, api.saveGoals), [persist]);
+  const saveBudgets = useCallback(persist(setBudgets, api.saveBudgets), [persist]);
   const saveParcelados = useCallback(persist(setParcelados, api.saveParcelados), [persist]);
   const saveCartoes = useCallback(persist(setCartoes, api.saveCartoes), [persist]);
   const saveCategoryRules = useCallback(persist(setCategoryRules, api.saveCategoryRules), [persist]);
@@ -254,15 +259,38 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
     return { label: "Déficit", statusIcon: "deficit", color: C.red, bg: tint(C.red, 8), desc: "Gastos projetados excedem a renda." };
   }, [projecao, totalRenda]);
 
-  const porCategoria = useMemo(() => {
-    // Gastos por categoria = lançamentos avulsos + compras de cartão da fatura do mês.
+  // Gasto por categoria do mês = lançamentos avulsos + compras de cartão da fatura.
+  // Mapa com TODAS as categorias (sem filtro) — base do "Gastos por categoria" e do orçamento.
+  const gastoCategoriaMap = useMemo(() => {
     const comprasMes = (cartoes || []).filter((c) => c.mesRef === `${year}-${monthIdx}`).flatMap((c) => c.compras || []);
-    return CATEGORIES.map((c) => {
-      const totalDespesas = despesas.filter((d) => d.categoria === c.id).reduce((s, d) => s + d.valor, 0);
-      const totalCartao = comprasMes.filter((x) => (x.categoria || "outros") === c.id).reduce((s, x) => s + (Number(x.valor) || 0), 0);
-      return { ...c, total: totalDespesas + totalCartao };
-    }).filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
+    const map = {};
+    for (const c of CATEGORIES) {
+      const dl = despesas.filter((d) => d.categoria === c.id).reduce((s, d) => s + d.valor, 0);
+      const dc = comprasMes.filter((x) => (x.categoria || "outros") === c.id).reduce((s, x) => s + (Number(x.valor) || 0), 0);
+      map[c.id] = dl + dc;
+    }
+    return map;
   }, [despesas, cartoes, year, monthIdx]);
+
+  const porCategoria = useMemo(() => CATEGORIES
+    .map((c) => ({ ...c, total: gastoCategoriaMap[c.id] || 0 }))
+    .filter((c) => c.total > 0).sort((a, b) => b.total - a.total), [gastoCategoriaMap]);
+
+  // Orçamento por categoria: teto do mês (override "YYYY-MM" ou padrão null) × gasto real.
+  const mesRefAtual = mesRefDe(year, monthIdx);
+  const orcamentos = useMemo(() => {
+    const limiteDe = (catId) => {
+      const over = budgets.find((b) => b.categoria === catId && b.mesRef === mesRefAtual);
+      if (over) return Number(over.limite) || 0;
+      const padrao = budgets.find((b) => b.categoria === catId && !b.mesRef);
+      return padrao ? Number(padrao.limite) || 0 : 0;
+    };
+    return CATEGORIES.map((c) => {
+      const limite = limiteDe(c.id);
+      const gasto = gastoCategoriaMap[c.id] || 0;
+      return { ...c, limite, gasto, pct: limite > 0 ? (gasto / limite) * 100 : 0 };
+    });
+  }, [budgets, gastoCategoriaMap, mesRefAtual]);
 
   // Histórico: mesma conta do mês exibido (renda dos holerites + extras; gastos =
   // lançamentos + cartão + parcelas de empréstimo + parcelas avulsas).
@@ -272,6 +300,28 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
     const lancadas = (allDespesas[`${y}-${m}`] || []).reduce((s, x) => s + x.valor, 0);
     return { label: MONTH_NAMES[m].slice(0, 3), despesas: lancadas + parcelasEmprestimosNoMes(y, m) + parcelasAvulsasNoMes(y, m) + faturasNoMes(y, m) + aportesInvestimentoNoMes(investimentos, y, m), renda: rendaNoMes(y, m) };
   }), [allDespesas, holerites, rendasExtras, emprestimos, parcelados, cartoes, investimentos, year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Previsão de fluxo de caixa dos próximos 6 meses: renda recorrente − (compromissos
+  // já conhecidos do mês + média de gastos variáveis recentes). Sinaliza meses no vermelho.
+  const fluxoPrevisto = useMemo(() => {
+    const recentes = [];
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(year, monthIdx - i, 1);
+      const v = (allDespesas[`${d.getFullYear()}-${d.getMonth()}`] || []).reduce((s, x) => s + x.valor, 0);
+      if (v > 0) recentes.push(v);
+    }
+    const runRate = recentes.length ? recentes.reduce((a, b) => a + b, 0) / recentes.length : despesasLancadas;
+    let saldoAcum = 0;
+    return Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(year, monthIdx + 1 + i, 1);
+      const m = d.getMonth(), y = d.getFullYear();
+      const renda = rendaNoMes(y, m);
+      const despesasMes = runRate + parcelasEmprestimosNoMes(y, m) + parcelasAvulsasNoMes(y, m) + faturasNoMes(y, m) + aportesInvestimentoNoMes(investimentos, y, m);
+      const saldo = renda - despesasMes;
+      saldoAcum += saldo;
+      return { label: MONTH_NAMES[m].slice(0, 3), ano: y, mesIdx: m, renda, despesas: despesasMes, saldo, saldoAcum };
+    });
+  }, [allDespesas, holerites, rendasExtras, emprestimos, parcelados, cartoes, investimentos, year, monthIdx, despesasLancadas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Perfis para a importação: cadastrados ("Meus Cartões") + os derivados do
   // histórico de importações. Os cadastrados têm prioridade e trazem os 4 finais.
@@ -304,8 +354,8 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
   const notificacoes = useMemo(() => gerarNotificacoes({
     year, monthIdx, today,
     totalRenda, totalDespesas, projecao,
-    porCategoria, cartoes, parcelVencendoMes, goals, assinaturas: assinaturas.itens,
-  }), [year, monthIdx, totalRenda, totalDespesas, projecao, porCategoria, cartoes, parcelVencendoMes, goals, assinaturas]);
+    porCategoria, orcamentos, fluxoPrevisto, cartoes, parcelVencendoMes, goals, assinaturas: assinaturas.itens,
+  }), [year, monthIdx, totalRenda, totalDespesas, projecao, porCategoria, orcamentos, fluxoPrevisto, cartoes, parcelVencendoMes, goals, assinaturas]);
 
   const ALL_TABS = [
     { id: "dashboard", label: "Visão Geral", grupo: "Visão", desc: "Saldo e projeção do mês" },
@@ -321,6 +371,9 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
     { id: "assistente", label: "Assistente IA", grupo: "Inteligência", desc: "Análises com IA" },
   ];
   const GRUPOS = ["Visão", "Dia a dia", "Crédito & dívidas", "Planejamento", "Inteligência"];
+
+  // Papel "viewer" no household = somente leitura (o servidor também barra escrita).
+  const canWrite = (user.householdRole || "owner") !== "viewer";
 
   // Só mostra as abas que o plano do usuário libera.
   const modulos = access?.modulos || [];
@@ -352,7 +405,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
   // Administração é uma PÁGINA de gestão à parte servida na rota /admin. Esta
   // ramificação permanece como fallback caso alguém force tab="admin".
   if (tab === "admin" && access?.admin) {
-    return <AdminTab user={user} onBack={() => setTab(TABS.find((t) => t.id !== "admin")?.id || "dashboard")} onLogout={onLogout} />;
+    return <Suspense fallback={<LoadingScreen text="Carregando administração..." />}><AdminTab user={user} onBack={() => setTab(TABS.find((t) => t.id !== "admin")?.id || "dashboard")} onLogout={onLogout} /></Suspense>;
   }
 
   return (
@@ -415,10 +468,10 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
               )}
             </div>
             <div className="drawer-foot">
-              {tabPermitida("lancamentos") && (
+              {canWrite && tabPermitida("lancamentos") && (
                 <button className="btn primary" onClick={() => go("lancamentos")}><Plus size={16} /> Novo lançamento</button>
               )}
-              <button className="btn ghost" onClick={onLogout} style={{ flex: tabPermitida("lancamentos") ? "0 0 auto" : "1" }}><LogOut size={16} /> Sair</button>
+              <button className="btn ghost" onClick={onLogout} style={{ flex: canWrite && tabPermitida("lancamentos") ? "0 0 auto" : "1" }}><LogOut size={16} /> Sair</button>
             </div>
           </nav>
         </>
@@ -426,19 +479,22 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
 
       <div className="has-dock" style={{ maxWidth: 1040, margin: "0 auto", padding: "18px 12px 64px" }}>
         {avisoGlobal && <div style={{ display: "flex", gap: 10, background: tint(C.accent, 10), border: `1px solid ${tint(C.accent, 28)}`, color: C.subtle, borderRadius: "var(--r-md)", padding: "11px 14px", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}><Sparkles size={15} style={{ flexShrink: 0, color: C.accent, marginTop: 1 }} />{avisoGlobal}</div>}
+        {!canWrite && <div style={{ display: "flex", gap: 10, background: tint(C.amber, 10), border: `1px solid ${tint(C.amber, 28)}`, color: C.subtle, borderRadius: "var(--r-md)", padding: "11px 14px", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}><TriangleAlert size={15} style={{ flexShrink: 0, color: C.amber, marginTop: 1 }} />Modo somente leitura: você acompanha as finanças da família, mas não pode editar.</div>}
         {erroSync && <div style={{ display: "flex", gap: 10, background: tint(C.red, 10), border: `1px solid ${tint(C.red, 25)}`, color: C.red, borderRadius: "var(--r-md)", padding: "11px 14px", fontSize: 12, marginBottom: 14 }}><TriangleAlert size={15} style={{ flexShrink: 0, marginTop: 1 }} />{erroSync}</div>}
 
         <div key={tab} className="tab-fade">
-        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} aportesInvestMes={aportesInvestMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} historicoMeses={historicoMeses} setTab={setTab} />}
+        <Suspense fallback={<div style={{ padding: "48px 0", textAlign: "center", color: C.muted, fontSize: 13 }}>Carregando…</div>}>
+        {tab === "dashboard" && tabPermitida("dashboard") && <DashboardTab income={income} setIncome={setIncome} rendaStr={rendaStr} rendaHerdada={rendaHerdada} salarioVig={salarioVig} totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} rendaManualNum={rendaManualNum} rendaHoleritesNum={rendaHoleritesNum} extraManualNum={extraManualNum} rendaExtrasMembrosNum={rendaExtrasMembrosNum} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} totalDespesas={totalDespesas} despesasLancadas={despesasLancadas} parcelasMensais={parcelasMensais} parcelasCartaoMes={parcelasCartaoMes} faturasCartaoMes={faturasCartaoMes} aportesInvestMes={aportesInvestMes} saldoAtual={saldoAtual} projecao={projecao} pctMes={pctMes} pctGasto={pctGasto} gastoDiario={gastoDiario} statusInfo={statusInfo} porCategoria={porCategoria} orcamentos={orcamentos} budgets={budgets} setBudgets={saveBudgets} fluxoPrevisto={fluxoPrevisto} totalEmprestimos={totalEmprestimos} parcelVencendoMes={parcelVencendoMes} despesas={despesas} monthIdx={monthIdx} year={year} assinaturas={assinaturas} assinMinMeses={assinMinMeses} onAssinMinMeses={mudarAssinMinMeses} historicoMeses={historicoMeses} setTab={setTab} />}
         {tab === "receitas" && tabPermitida("receitas") && <ReceitasTab totalRenda={totalRenda} rendaNum={rendaNum} extraNum={extraNum} pctMes={pctMes} pctGasto={pctGasto} membros={membros} holerites={holerites} setHolerites={saveHolerites} rendasExtras={rendasExtras} setRendasExtras={saveRendasExtras} monthIdx={monthIdx} year={year} />}
         {tab === "lancamentos" && tabPermitida("lancamentos") && <LancamentosTab despesas={despesas} setDespesasMk={setDespesasMk} membros={membros} />}
         {tab === "extrato" && tabPermitida("extrato") && <ExtratoTab despesas={despesas} setDespesasMk={setDespesasMk} totalDespesas={totalDespesas} cartoes={cartoes} emprestimos={emprestimos} investimentos={investimentos} holerites={holerites} rendasExtras={rendasExtras} temReceitas={tabPermitida("receitas")} monthIdx={monthIdx} year={year} setTab={setTab} membros={membros} />}
         {tab === "cartoes" && tabPermitida("cartoes") && <CartoesTab cartoes={cartoes} setCartoes={saveCartoes} cardProfiles={cardProfilesDB} setCardProfiles={saveCardProfiles} cardProfilesImport={cardProfiles} parcelados={parcelados} setParcelados={saveParcelados} categoryRules={categoryRules} setCategoryRules={saveCategoryRules} globalCategoryRules={globalCategoryRules} membros={membros} setMembros={saveMembros} temImportar temAssistente={modulos.includes("assistente")} access={access} year={year} monthIdx={monthIdx} />}
         {tab === "emprestimos" && tabPermitida("emprestimos") && <EmprestimosTab emprestimos={emprestimos} setEmprestimos={saveEmprestimos} membros={membros} />}
         {tab === "investimentos" && tabPermitida("investimentos") && <InvestimentosTab investimentos={investimentos} setInvestimentos={saveInvestimentos} membros={membros} year={year} monthIdx={monthIdx} />}
-        {tab === "metas" && tabPermitida("metas") && <MetasTab goals={goals} setGoals={saveGoals} />}
+        {tab === "metas" && tabPermitida("metas") && <MetasTab goals={goals} setGoals={saveGoals} projecao={projecao} />}
         {tab === "historico" && tabPermitida("historico") && <HistoricoTab historicoMeses={historicoMeses} />}
         {tab === "assistente" && tabPermitida("assistente") && <AssistenteTab chat={chat} setChat={setChat} totalRenda={totalRenda} totalDespesas={totalDespesas} saldoAtual={saldoAtual} projecao={projecao} statusInfo={statusInfo} porCategoria={porCategoria} goals={goals} emprestimos={emprestimos} parcelados={parcelados} parcelasMensais={parcelasMensais} totalEmprestimos={totalEmprestimos} investimentos={investimentos} holerites={holerites} rendasExtras={rendasExtras} monthIdx={monthIdx} year={year} />}
+        </Suspense>
         </div>
       </div>
 
@@ -447,7 +503,7 @@ export default function Dashboard({ user, access, onLogout, onUserUpdate, initia
       <nav className="dock" aria-label="Navegação rápida">
         {tabPermitida("dashboard") && <button className="dock-nav" aria-current={tab === "dashboard"} onClick={() => go("dashboard")}><TabIcon id="dashboard" size={21} /> Visão</button>}
         {tabPermitida("cartoes") && <button className="dock-nav" aria-current={tab === "cartoes"} onClick={() => go("cartoes")}><TabIcon id="cartoes" size={21} /> Cartões</button>}
-        {tabPermitida("lancamentos") && <button className="dock-fab" aria-label="Novo lançamento" onClick={() => go("lancamentos")}><Plus size={24} /></button>}
+        {canWrite && tabPermitida("lancamentos") && <button className="dock-fab" aria-label="Novo lançamento" onClick={() => go("lancamentos")}><Plus size={24} /></button>}
         {tabPermitida("metas") && <button className="dock-nav" aria-current={tab === "metas"} onClick={() => go("metas")}><TabIcon id="metas" size={21} /> Metas</button>}
         {tabPermitida("historico") && <button className="dock-nav" aria-current={tab === "historico"} onClick={() => go("historico")}><TabIcon id="historico" size={21} /> Histórico</button>}
       </nav>

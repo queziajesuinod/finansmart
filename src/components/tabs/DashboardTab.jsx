@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { useState, useMemo } from "react";
 import { C, MONTH_NAMES, CATEGORIES, fmt, fmtPct, tint } from "../../lib/constants";
-import { Card, Label, Badge, Bar, Empty, STitle, Divider } from "../ui";
-import { CatIcon, Wallet, ReceiptText, CreditCard, Landmark, ShoppingBag, CircleCheck, TriangleAlert, Siren, TrendingUp } from "../../lib/icons.jsx";
+import { Card, Label, Badge, Bar, Empty, STitle, Divider, MoneyInput } from "../ui";
+import { CatIcon, Wallet, ReceiptText, CreditCard, Landmark, ShoppingBag, CircleCheck, TriangleAlert, Siren, TrendingUp, PiggyBank } from "../../lib/icons.jsx";
 import AssinaturasPanel from "../AssinaturasPanel.jsx";
 
 const STATUS_ICON = { superavit: CircleCheck, equilibrado: TriangleAlert, deficit: Siren };
@@ -33,7 +33,7 @@ function chartPaths(vals, W = 320, H = 118) {
   return { area, line, last: pts[n - 1] };
 }
 
-export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, rendaManualNum = 0, rendaHoleritesNum = 0, extraManualNum = 0, rendaExtrasMembrosNum = 0, membros = [], holerites = [], setHolerites, rendasExtras = [], setRendasExtras, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, aportesInvestMes = 0, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, totalEmprestimos, parcelVencendoMes, despesas, monthIdx, year, assinaturas, assinMinMeses, onAssinMinMeses, historicoMeses = [], setTab }) {
+export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada, salarioVig, totalRenda, rendaNum, extraNum, rendaManualNum = 0, rendaHoleritesNum = 0, extraManualNum = 0, rendaExtrasMembrosNum = 0, membros = [], holerites = [], setHolerites, rendasExtras = [], setRendasExtras, totalDespesas, despesasLancadas, parcelasMensais, parcelasCartaoMes, faturasCartaoMes, aportesInvestMes = 0, saldoAtual, projecao, pctMes, pctGasto, gastoDiario, statusInfo, porCategoria, orcamentos = [], budgets = [], setBudgets, fluxoPrevisto = [], totalEmprestimos, parcelVencendoMes, despesas, monthIdx, year, assinaturas, assinMinMeses, onAssinMinMeses, historicoMeses = [], setTab }) {
   const chip = statusInfo ? (CHIP[statusInfo.statusIcon] || CHIP.equilibrado) : null;
 
   // Série de saldo (renda − despesas) dos últimos meses, para a evolução.
@@ -47,6 +47,22 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
   const delta = firstSaldo ? Math.round(((lastSaldo - firstSaldo) / Math.abs(firstSaldo)) * 100) : 0;
 
   const txs = useMemo(() => [...(despesas || [])].sort((a, b) => String(b.data || "").localeCompare(String(a.data || ""))).slice(0, 4), [despesas]);
+
+  // Orçamento: edita o teto PADRÃO (mesRef null) de uma categoria. 0 = remove o limite.
+  const setLimite = (catId, valor) => {
+    if (!setBudgets) return;
+    const lim = Number(valor) || 0;
+    const outros = (budgets || []).filter((b) => !(b.categoria === catId && !b.mesRef));
+    setBudgets(lim > 0 ? [...outros, { categoria: catId, limite: lim, mesRef: null }] : outros);
+  };
+  const corOrc = (pct) => (pct >= 100 ? C.red : pct >= 80 ? C.amber : C.emerald);
+  const [orcAberto, setOrcAberto] = useState(false);
+  // Só mostra categorias com limite definido quando fechado; todas quando aberto (p/ editar).
+  const orcVisiveis = orcAberto ? orcamentos : orcamentos.filter((o) => o.limite > 0);
+
+  // Previsão de fluxo: meses no vermelho e escala das barras.
+  const fpNeg = (fluxoPrevisto || []).filter((f) => f.saldo < 0).length;
+  const fpMaxAbs = Math.max(1, ...(fluxoPrevisto || []).map((f) => Math.abs(f.saldo)));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -137,6 +153,33 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
       )}
       </div>
 
+      {/* PREVISÃO DE FLUXO — próximos meses */}
+      {fluxoPrevisto.length > 0 && totalRenda > 0 && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
+            <STitle style={{ marginBottom: 0 }}>Previsão dos próximos meses</STitle>
+            <TrendingUp size={15} color={C.muted} />
+          </div>
+          <p style={{ fontSize: 11, color: C.muted, margin: "2px 0 12px", lineHeight: 1.5 }}>
+            Renda recorrente − compromissos já conhecidos (faturas, parcelas, empréstimos) e a média dos seus gastos variáveis.
+          </p>
+          {fpNeg > 0 && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", background: tint(C.red, 9), border: `1px solid ${tint(C.red, 22)}`, color: C.red, borderRadius: "var(--r-sm)", padding: "9px 12px", fontSize: 12, fontWeight: 700, marginBottom: 12 }}>
+              <Siren size={14} /> {fpNeg} {fpNeg > 1 ? "meses podem fechar" : "mês pode fechar"} no vermelho
+            </div>
+          )}
+          {fluxoPrevisto.map((f, i) => (
+            <div key={i} style={{ marginBottom: 11 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{f.label}/{f.ano}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: f.saldo < 0 ? C.red : C.emerald }}>{f.saldo < 0 ? "−" : "+"}{fmt(Math.abs(f.saldo))}</span>
+              </div>
+              <Bar pct={(Math.abs(f.saldo) / fpMaxAbs) * 100} color={f.saldo < 0 ? C.red : C.emerald} />
+            </div>
+          ))}
+        </Card>
+      )}
+
       {/* Composição */}
       {(parcelasMensais > 0 || parcelasCartaoMes > 0 || faturasCartaoMes > 0 || aportesInvestMes > 0) && totalDespesas > 0 && (
         <Card>
@@ -182,6 +225,33 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
                 </div>
               </div>
               <Bar pct={totalRenda > 0 ? cat.total / totalRenda * 100 : 0} color={cat.color} />
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* ORÇAMENTO POR CATEGORIA */}
+      {setBudgets && (
+        <Card>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
+            <STitle style={{ marginBottom: 0 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><PiggyBank size={16} color={C.primary} /> Orçamento por categoria</span></STitle>
+            <button onClick={() => setOrcAberto((v) => !v)} style={{ background: "none", border: 0, color: C.primary, fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}>{orcAberto ? "Concluir" : "Definir limites"}</button>
+          </div>
+          <p style={{ fontSize: 11, color: C.muted, margin: "2px 0 12px", lineHeight: 1.5 }}>Defina um teto mensal por categoria e acompanhe quanto já usou em {MONTH_NAMES[monthIdx]}.</p>
+          {orcVisiveis.length === 0 && !orcAberto && (
+            <div style={{ fontSize: 12, color: C.muted }}>Nenhum limite definido ainda. Toque em <b>Definir limites</b>.</div>
+          )}
+          {orcVisiveis.map((o) => (
+            <div key={o.id} style={{ marginBottom: 13 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><CatIcon id={o.id} size={16} color={o.color} /> {o.label}</span>
+                {orcAberto ? (
+                  <div style={{ width: 120 }}><MoneyInput value={o.limite || ""} onChange={(v) => setLimite(o.id, v)} placeholder="Sem limite" style={{ padding: "7px 10px", fontSize: 12.5, textAlign: "right" }} /></div>
+                ) : (
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: corOrc(o.pct) }}>{fmt(o.gasto)} <span style={{ color: C.muted, fontWeight: 600 }}>/ {fmt(o.limite)}</span></span>
+                )}
+              </div>
+              {o.limite > 0 && <Bar pct={Math.min(100, o.pct)} color={corOrc(o.pct)} />}
             </div>
           ))}
         </Card>

@@ -5,7 +5,7 @@
      que um novo deploy busca o arquivo novo; caches antigos são limpos no activate).
    - Requisições de API (/api, /auth) e de outras origens → nunca são cacheadas.
    Bump CACHE ao mudar a lógica deste arquivo. */
-const CACHE = "jose-planeja-v1";
+const CACHE = "jose-planeja-v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -57,5 +57,34 @@ self.addEventListener("fetch", (event) => {
     } catch {
       return cached || Response.error();
     }
+  })());
+});
+
+// ─── Web Push ────────────────────────────────────────────────
+// Recebe o aviso do servidor e exibe a notificação do sistema.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: "José Planeja", body: event.data && event.data.text ? event.data.text() : "" }; }
+  const title = data.title || "José Planeja";
+  const options = {
+    body: data.body || "",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: data.tag || undefined,     // agrupa/atualiza avisos do mesmo tipo
+    data: { url: data.url || "/" },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Clicar na notificação foca uma aba aberta do app ou abre uma nova.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const alvo = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil((async () => {
+    const todas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of todas) {
+      if (c.url.includes(self.location.origin) && "focus" in c) return c.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(alvo);
   })());
 });

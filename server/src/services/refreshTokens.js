@@ -95,6 +95,44 @@ async function rotateRefreshToken(raw, { res, userAgent, ip } = {}) {
   return { userId: current.userId };
 }
 
+// ─── Sessões / dispositivos conectados ──────────────────────────────────────
+// 1 família ≈ 1 dispositivo (o login cria a família; as rotações a mantêm).
+// Lista as famílias ativas do usuário com o metadado mais recente de cada uma.
+async function listSessions(userId) {
+  const tokens = await RefreshToken.findAll({
+    where: { userId, revokedAt: { [Op.is]: null }, expiresAt: { [Op.gt]: new Date() } },
+    order: [["createdAt", "ASC"]],
+  });
+  const fam = new Map();
+  for (const t of tokens) {
+    const g = fam.get(t.familyId);
+    if (!g) {
+      fam.set(t.familyId, { familyId: t.familyId, createdAt: t.createdAt, lastSeen: t.createdAt, userAgent: t.userAgent, ip: t.ip, expiresAt: t.expiresAt });
+      continue;
+    }
+    if (t.createdAt < g.createdAt) g.createdAt = t.createdAt;
+    // Token mais recente da família = última atividade → fonte de userAgent/ip.
+    if (t.createdAt >= g.lastSeen) { g.lastSeen = t.createdAt; g.userAgent = t.userAgent; g.ip = t.ip; g.expiresAt = t.expiresAt; }
+  }
+  return [...fam.values()].sort((a, b) => b.lastSeen - a.lastSeen);
+}
+
+// familyId do cookie atual (pra marcar "este aparelho" na lista).
+async function currentFamilyId(req) {
+  const raw = readRefreshCookie(req);
+  if (!raw) return null;
+  const rec = await RefreshToken.findOne({ where: { tokenHash: sha256(raw) } });
+  return rec ? rec.familyId : null;
+}
+
+// Revoga uma família SÓ se ela pertencer ao usuário (impede matar sessão alheia).
+async function revokeFamilyForUser(familyId, userId) {
+  const rec = await RefreshToken.findOne({ where: { familyId, userId } });
+  if (!rec) return false;
+  await revokeFamily(familyId);
+  return true;
+}
+
 // Logout: mata a família inteira do cookie atual e limpa o cookie.
 async function revokeRefreshFromRequest(req, res) {
   const raw = readRefreshCookie(req);
@@ -111,6 +149,9 @@ module.exports = {
   rotateRefreshToken,
   revokeFamily,
   revokeRefreshFromRequest,
+  listSessions,
+  currentFamilyId,
+  revokeFamilyForUser,
   readRefreshCookie,
   setRefreshCookie,
   clearRefreshCookie,

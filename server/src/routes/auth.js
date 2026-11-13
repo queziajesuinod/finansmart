@@ -16,6 +16,26 @@ router.post("/login", authLimiter, authController.login);
 router.post("/refresh", authController.refresh);
 router.post("/logout", authController.logout);
 
+// Dispositivos / sessões ativas (requer login).
+router.get("/sessions", requireAuth, authController.sessions);
+router.delete("/sessions/:id", requireAuth, authController.revokeSession);
+
+// Web Push (requer login).
+router.get("/push/key", requireAuth, authController.pushKey);
+router.post("/push/subscribe", requireAuth, authController.pushSubscribe);
+router.post("/push/unsubscribe", requireAuth, authController.pushUnsubscribe);
+
+// ─── Login familiar (household) ──────────────────────────────
+// Convites: prévia e aceite são públicos (o convidado ainda não tem conta).
+router.get("/household/invites/:token", authController.householdInvitePreview);
+router.post("/household/invites/:token/accept", authLimiter, authController.householdInviteAccept);
+// Gestão da família (requer login).
+router.post("/household/invites", requireAuth, authController.householdInviteCreate);
+router.delete("/household/invites/:id", requireAuth, authController.householdRevokeInvite);
+router.get("/household/members", requireAuth, authController.householdMembers);
+router.put("/household/members/:id/role", requireAuth, authController.householdSetRole);
+router.delete("/household/members/:id", requireAuth, authController.householdRemoveMember);
+
 // ─── Passkeys (WebAuthn) ─────────────────────────────────────
 // Login sem senha: endpoints públicos, protegidos por rate limit.
 router.post("/webauthn/login/options", authLimiter, authController.webauthnLoginOptions);

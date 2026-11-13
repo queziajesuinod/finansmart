@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro, Holerite, RendaExtra, GlobalCategoryRule, ImportLog, Investimento, DataRev } = require("../models");
+const { sequelize, Income, Despesa, Emprestimo, Parcelado, Cartao, Compra, Goal, CategoryRule, CardProfile, Membro, Holerite, RendaExtra, GlobalCategoryRule, ImportLog, Investimento, Budget, DataRev } = require("../models");
 const { getSetting } = require("../services/settings");
 
 // Garante que o usuário tenha um membro "principal" (criado a partir do nome
@@ -31,7 +31,7 @@ const diaOuNull = (v) => { const d = int(v); return d >= 1 && d <= 31 ? d : null
 // Sem o cabeçalho (cliente antigo em cache) o PUT é aceito como antes. O lock
 // na linha também enfileira PUTs simultâneos da mesma coleção.
 async function conferirRev(req, colecao, transaction) {
-  const userId = req.user.id;
+  const userId = req.dataOwnerId;
   await DataRev.bulkCreate([{ userId, colecao, rev: 0 }], { ignoreDuplicates: true, transaction });
   const row = await DataRev.findOne({ where: { userId, colecao }, transaction, lock: transaction.LOCK.UPDATE });
   const enviada = req.get("X-Data-Rev");
@@ -49,8 +49,8 @@ async function conferirRev(req, colecao, transaction) {
 // ─── GET /api/state — carrega tudo do usuário em uma chamada ──
 async function getState(req, res, next) {
   try {
-    const userId = req.user.id;
-    await ensurePrincipal(userId, req.user.nome);
+    const userId = req.dataOwnerId;
+    await ensurePrincipal(userId, req.dataOwner.nome);
     const [incomes, despesas, emprestimos, parcelados, cartoes, goals, rules, profiles, membros, holerites, rendasExtras, globalRules, investimentos, revs] = await Promise.all([
       Income.findAll({ where: { userId } }),
       Despesa.findAll({ where: { userId } }),
@@ -71,6 +71,9 @@ async function getState(req, res, next) {
       // Resiliente: se a migração 034 ainda não rodou, segue sem revisões.
       DataRev.findAll({ where: { userId } }).catch(() => []),
     ]);
+
+    // Resiliente: se a migração 037 (orçamentos) ainda não rodou, degrada p/ vazio.
+    const budgets = await Budget.findAll({ where: { userId } }).catch(() => []);
 
     res.json({
       revs: Object.fromEntries(revs.map((r) => [r.colecao, r.rev])),
@@ -110,6 +113,7 @@ async function getState(req, res, next) {
         compras: (c.compras || []).map((x) => ({ id: x.id, descricao: x.descricao, valor: num(x.valor), data: x.data, categoria: x.categoria, parcelas: x.parcelas, parcelaAtual: x.parcelaAtual, portador: x.portador, final: x.final, membroId: x.membroId || null })),
       })),
       goals: goals.map((g) => ({ id: g.id, nome: g.nome, alvo: num(g.alvo), atual: num(g.atual), prazo: g.prazo })),
+      budgets: budgets.map((b) => ({ id: b.id, categoria: b.categoria, limite: num(b.limite), mesRef: b.mesRef || null })),
       categoryRules: Object.fromEntries(rules.map((r) => [r.chave, r.categoria])),
       // Regras GLOBAIS (promovidas pelo admin) — o importador aplica junto (as
       // pessoais têm prioridade). Ver [[importacao-por-banco]] no domínio.
@@ -128,7 +132,7 @@ async function getState(req, res, next) {
 // aqui apagamos e recriamos dentro de uma transação.
 function replaceAll(Model, mapRow) {
   return async (req, res, next) => {
-    const userId = req.user.id;
+    const userId = req.dataOwnerId;
     const items = Array.isArray(req.body) ? req.body : [];
     const t = await sequelize.transaction();
     try {
@@ -216,7 +220,7 @@ const putInvestimentos = replaceAll(Investimento, (v) => ({
 // Membros (familiares). Diferente do replaceAll genérico: PRESERVA o id vindo do
 // cliente (referenciado por membroId em outras coleções) e garante 1 principal.
 async function putMembros(req, res, next) {
-  const userId = req.user.id;
+  const userId = req.dataOwnerId;
   const items = Array.isArray(req.body) ? req.body : [];
   const t = await sequelize.transaction();
   try {
@@ -239,7 +243,7 @@ async function putMembros(req, res, next) {
     });
     // Sempre garante um principal (recria a partir do nome do usuário se faltar).
     if (!temPrincipal) {
-      rows.unshift({ id: crypto.randomUUID(), userId, nome: (req.user.nome || "Eu").trim() || "Eu", tipo: "principal", parentesco: null, cor: null, ordem: -1, ativo: true });
+      rows.unshift({ id: crypto.randomUUID(), userId, nome: (req.dataOwner.nome || "Eu").trim() || "Eu", tipo: "principal", parentesco: null, cor: null, ordem: -1, ativo: true });
     }
     if (rows.length) await Membro.bulkCreate(rows, { transaction: t });
     await t.commit();
@@ -253,6 +257,13 @@ async function putMembros(req, res, next) {
 
 const putGoals = replaceAll(Goal, (g) => ({ nome: g.nome, alvo: num(g.alvo), atual: num(g.atual), prazo: dateOrNull(g.prazo) }));
 
+// Orçamentos por categoria. mesRef "YYYY-MM" (override pontual) ou null (todo mês).
+const putBudgets = replaceAll(Budget, (b) => ({
+  categoria: String(b.categoria || "outros").slice(0, 40),
+  limite: num(b.limite),
+  mesRef: /^\d{4}-\d{2}$/.test(String(b.mesRef || "")) ? String(b.mesRef).slice(0, 7) : null,
+}));
+
 const putCardProfiles = replaceAll(CardProfile, (p) => ({
   nome: p.nome, banco: p.banco || null, bandeira: p.bandeira || null, limite: num(p.limite),
   vencimentoDia: p.vencimentoDia ? int(p.vencimentoDia) : null,
@@ -263,7 +274,7 @@ const putCardProfiles = replaceAll(CardProfile, (p) => ({
 
 // Cartões têm compras aninhadas → tratamento próprio.
 async function putCartoes(req, res, next) {
-  const userId = req.user.id;
+  const userId = req.dataOwnerId;
   const items = Array.isArray(req.body) ? req.body : [];
   const t = await sequelize.transaction();
   try {
@@ -300,7 +311,7 @@ async function putCartoes(req, res, next) {
 
 // Regras de categorização (comerciante → categoria). Recebe um mapa { chave: categoria }.
 async function putCategoryRules(req, res, next) {
-  const userId = req.user.id;
+  const userId = req.dataOwnerId;
   const map = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
   const t = await sequelize.transaction();
   try {
@@ -344,4 +355,4 @@ async function postImportLog(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras, putInvestimentos, postImportLog };
+module.exports = { getState, putIncomes, putDespesas, putEmprestimos, putParcelados, putGoals, putBudgets, putCartoes, putCategoryRules, putCardProfiles, putMembros, putHolerites, putRendasExtras, putInvestimentos, postImportLog };

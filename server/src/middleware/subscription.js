@@ -4,7 +4,7 @@ const { getAccessState } = require("../services/access");
 
 module.exports = async function requireActiveSubscription(req, res, next) {
   try {
-    const access = req.access || (await getAccessState(req.user));
+    const access = req.access || (await getAccessState(req.user, req.dataOwner || req.user));
     req.access = access;
 
     if (!access.liberado) {

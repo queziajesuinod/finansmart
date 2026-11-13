@@ -15,6 +15,10 @@ module.exports = (sequelize, DataTypes) => {
       telefone: { type: DataTypes.STRING, allowNull: true },
       stripeCustomerId: { type: DataTypes.STRING, allowNull: true },
       ativo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+      // Login familiar: null = titular do próprio household; senão aponta pro titular.
+      householdOwnerId: { type: DataTypes.UUID, allowNull: true },
+      householdRole: { type: DataTypes.STRING(20), allowNull: true },
+      membroId: { type: DataTypes.STRING, allowNull: true },
     },
     { tableName: "users" }
   );
@@ -33,9 +37,18 @@ module.exports = (sequelize, DataTypes) => {
 
   // Nunca serializa segredos. temSenha/temGoogle informam ao front quais métodos
   // de login a conta já tem (ex: conta só-passkey não mostra "senha atual").
+  // isOwner/householdRole/membroId: papel do próprio usuário no household (lidos
+  // direto da linha dele — o front não precisa resolver o dono).
   User.prototype.toSafeJSON = function toSafeJSON() {
-    const { id, nome, email, role, cpf, telefone, ativo, googleId, senhaHash, createdAt } = this;
-    return { id, nome, email, role, cpf, telefone, ativo, temGoogle: Boolean(googleId), temSenha: Boolean(senhaHash), createdAt };
+    const { id, nome, email, role, cpf, telefone, ativo, googleId, senhaHash, householdOwnerId, householdRole, membroId, createdAt } = this;
+    return {
+      id, nome, email, role, cpf, telefone, ativo,
+      temGoogle: Boolean(googleId), temSenha: Boolean(senhaHash),
+      isOwner: !householdOwnerId,
+      householdRole: householdOwnerId ? (householdRole || "member") : "owner",
+      membroId: membroId || null,
+      createdAt,
+    };
   };
 
   return User;

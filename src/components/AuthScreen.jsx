@@ -4,7 +4,7 @@ import { C } from "../lib/constants";
 import { Card, Label, Inp, Btn, STitle } from "./ui";
 import { LogoTile } from "./Logo.jsx";
 import InstallPWA from "./InstallPWA.jsx";
-import { register, login, authConfig, googleLoginUrl, getPlans, loginWithPasskey, webauthnSupported, webauthnAutofillSupported } from "../lib/api";
+import { register, login, authConfig, googleLoginUrl, getPlans, loginWithPasskey, webauthnSupported, webauthnAutofillSupported, getHouseholdInvite, acceptHouseholdInvite } from "../lib/api";
 import { maskCPF, maskPhone } from "../lib/masks";
 import { fmt } from "../lib/constants";
 import { Trash2, UserPlus, Users, Fingerprint } from "../lib/icons.jsx";
@@ -19,6 +19,7 @@ export default function AuthScreen({ onLogin }) {
   const [googleEnabled, setGoogleEnabled] = useState(false);
   const [cadastroPublico, setCadastroPublico] = useState(true);
   const [passkeyOn, setPasskeyOn] = useState(false);
+  const [invite, setInvite] = useState(null); // { token, preview } — fluxo de convite familiar
 
   useEffect(() => {
     authConfig().then((c) => { setGoogleEnabled(Boolean(c.googleEnabled)); setCadastroPublico(c.cadastroPublico !== false); if (c.cadastroPublico === false) setMode("login"); });
@@ -26,6 +27,12 @@ export default function AuthScreen({ onLogin }) {
     // Mostra erro se o callback do Google falhou.
     const p = new URLSearchParams(window.location.search);
     if (p.get("erro") === "google") setErr("Não foi possível entrar com o Google. Tente novamente.");
+
+    // Convite de família (?convite=<token>): busca a prévia e abre o formulário de aceite.
+    const conviteToken = p.get("convite");
+    if (conviteToken) {
+      getHouseholdInvite(conviteToken).then((prev) => setInvite({ token: conviteToken, preview: prev })).catch(() => setInvite({ token: conviteToken, preview: { valido: false } }));
+    }
 
     // Passkeys: mostra o botão se o navegador suporta e liga a sugestão
     // (UI condicional) no campo de e-mail quando disponível.
@@ -75,6 +82,22 @@ export default function AuthScreen({ onLogin }) {
     }
   }
 
+  async function handleAccept() {
+    setErr("");
+    setLoading(true);
+    try {
+      if (!form.nome.trim()) throw new Error("Informe seu nome.");
+      if (!form.email.trim() || !form.senha) throw new Error("Preencha e-mail e senha.");
+      const data = await acceptHouseholdInvite(invite.token, { nome: form.nome.trim(), email: form.email.trim().toLowerCase(), senha: form.senha });
+      window.history.replaceState({}, "", window.location.pathname); // limpa ?convite
+      onLogin(data);
+    } catch (e) {
+      setErr(e.message || "Não foi possível aceitar o convite.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handlePasskey() {
     setErr("");
     try {
@@ -85,6 +108,42 @@ export default function AuthScreen({ onLogin }) {
       if (e && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
       setErr(e.message || "Não foi possível entrar com a passkey.");
     }
+  }
+
+  // ─── Fluxo de convite familiar ───────────────────────────────
+  if (invite) {
+    const ok = invite.preview && invite.preview.valido;
+    return (
+      <div style={{ minHeight: "100vh", background: `var(--bg)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter','Segoe UI',sans-serif", padding: 16 }}>
+        <div style={{ width: "100%", maxWidth: 400 }}>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><LogoTile size={60} /></div>
+            <div style={{ fontFamily: "'Plus Jakarta Sans','Inter',sans-serif", fontSize: 24, fontWeight: 800, color: C.text }}>José <span style={{ color: C.accent }}>Planeja</span></div>
+          </div>
+          <Card style={{ padding: "28px 24px" }}>
+            {!ok ? (
+              <>
+                <STitle>Convite inválido</STitle>
+                <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>Este convite não existe, já foi usado ou expirou. Peça um novo link para quem te convidou.</p>
+                <Btn onClick={() => { setInvite(null); window.history.replaceState({}, "", window.location.pathname); }} style={{ width: "100%", marginTop: 16 }}>Ir para o login</Btn>
+              </>
+            ) : (
+              <>
+                <STitle>Entrar na família de {invite.preview.ownerNome || "seu familiar"}</STitle>
+                <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6, marginBottom: 16 }}>Você foi convidado{invite.preview.nome ? ` como ${invite.preview.nome}` : ""} para acompanhar as finanças da família. Crie seu acesso abaixo.</p>
+                <form onSubmit={(e) => { e.preventDefault(); handleAccept(); }}>
+                  <div style={{ marginBottom: 14 }}><Label>Seu nome</Label><Inp name="name" autoComplete="name" placeholder="Seu nome" value={form.nome} onChange={onField("nome")} /></div>
+                  <div style={{ marginBottom: 14 }}><Label>E-mail</Label><Inp type="email" name="email" autoComplete="username" placeholder="seu@email.com" value={form.email} onChange={onField("email")} /></div>
+                  <div style={{ marginBottom: 20 }}><Label>Senha</Label><Inp type="password" name="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres" value={form.senha} onChange={onField("senha")} /></div>
+                  {err && <div style={{ fontSize: 12, color: C.red, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>{err}</div>}
+                  <Btn type="submit" disabled={loading} style={{ width: "100%" }}>{loading ? "Aguarde..." : "Entrar na família"}</Btn>
+                </form>
+              </>
+            )}
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   return (

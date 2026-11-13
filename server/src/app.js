@@ -1,5 +1,17 @@
 const path = require("path");
 const fs = require("fs");
+const Sentry = require("@sentry/node");
+
+// Monitoramento de erros em produção — no-op se SENTRY_DSN não estiver setado.
+// Inicializa antes do app p/ instrumentar o Express.
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    tracesSampleRate: 0.1,
+    sendDefaultPii: false,
+  });
+}
+
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -57,6 +69,9 @@ if (temDist) {
 
 // 404 para rotas de API não encontradas.
 app.use((req, res) => res.status(404).json({ error: "Rota não encontrada.", code: "not_found" }));
+
+// Captura de erros pelo Sentry (antes do nosso handler) — no-op se não configurado.
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 
 app.use(errorHandler);
 

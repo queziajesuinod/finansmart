@@ -60,10 +60,13 @@ async function todosModulos() {
 // Duas dimensões INDEPENDENTES:
 //   - liberado  → passou no gate de PAGAMENTO (402 quando false)
 //   - modulos   → PERMISSÃO por módulo (403 quando a rota pede um módulo de fora)
-async function getAccessState(user) {
+// billingUser (opcional) = a conta que PAGA. Num login familiar, o membro herda a
+// assinatura/módulos do titular (billingUser = dono), mas o acesso ao console de
+// admin continua baseado no papel do usuário que está logado (user.role).
+async function getAccessState(user, billingUser = user) {
   const billing = await billingEnabled();
 
-  // Admin: sempre liberado e com todos os módulos.
+  // Admin do app (console): sempre liberado e com todos os módulos.
   if (user.role === "admin") {
     return {
       liberado: true,
@@ -75,8 +78,8 @@ async function getAccessState(user) {
     };
   }
 
-  const sub = await getVigenteSubscription(user.id);
-  const preco = await precoInfo(user.id, sub && sub.plan);
+  const sub = await getVigenteSubscription(billingUser.id);
+  const preco = await precoInfo(billingUser.id, sub && sub.plan);
 
   // Módulos vêm SEMPRE do plano atribuído (mesmo sem pagamento em dia), para
   // que a permissão possa ser testada. Sem plano atribuído → todos os módulos.

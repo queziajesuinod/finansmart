@@ -1,9 +1,9 @@
 // @ts-nocheck
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import AuthScreen from "./components/AuthScreen.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import LockedScreen from "./components/LockedScreen.jsx";
-import AdminTab from "./components/tabs/AdminTab.jsx";
+const AdminTab = lazy(() => import("./components/tabs/AdminTab.jsx"));
 import { LoadingScreen } from "./components/Logo.jsx";
 import { refresh as refreshSession, logout as apiLogout } from "./lib/api.js";
 
@@ -50,7 +50,7 @@ export default function App() {
   const onAdminRoute = window.location.pathname.replace(/\/+$/, "") === "/admin";
   if (onAdminRoute) {
     if (session.access?.admin) {
-      return <AdminTab user={session.user} onBack={() => { window.location.href = "/"; }} onLogout={handleLogout} />;
+      return <Suspense fallback={<LoadingScreen />}><AdminTab user={session.user} onBack={() => { window.location.href = "/"; }} onLogout={handleLogout} /></Suspense>;
     }
     window.history.replaceState({}, "", "/");
   }

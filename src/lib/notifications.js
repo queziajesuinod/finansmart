@@ -28,7 +28,7 @@ export function gerarNotificacoes(ctx) {
   const {
     year, monthIdx, today = new Date(),
     totalRenda = 0, totalDespesas = 0, projecao = 0,
-    porCategoria = [], cartoes = [], parcelVencendoMes = [], goals = [], assinaturas = [],
+    porCategoria = [], orcamentos = [], fluxoPrevisto = [], cartoes = [], parcelVencendoMes = [], goals = [], assinaturas = [],
   } = ctx || {};
   const periodo = `${year}-${monthIdx}`;
   const mesNome = MONTH_NAMES[monthIdx] || "";
@@ -58,6 +58,25 @@ export function gerarNotificacoes(ctx) {
       add({ id: `cat-alta-${top.id}-${periodo}`, severidade: "media", tab: "extrato",
         titulo: `Concentração em ${top.label}`, msg: `${top.label} representa ${pct.toFixed(0)}% dos seus gastos de ${mesNome} (${fmt(top.total)}).` });
     }
+  }
+
+  // 4b) Orçamento por categoria: estourou (gasto ≥ limite) ou perto (≥80%).
+  for (const o of orcamentos || []) {
+    if (!(o.limite > 0)) continue;
+    if (o.gasto >= o.limite) {
+      add({ id: `orcamento-estourado-${o.id}-${periodo}`, severidade: "alta", tab: "dashboard",
+        titulo: `Orçamento de ${o.label} estourou`, msg: `Você gastou ${fmt(o.gasto)} de ${fmt(o.limite)} em ${o.label} neste mês (${Math.round(o.pct)}%).` });
+    } else if (o.pct >= 80) {
+      add({ id: `orcamento-perto-${o.id}-${periodo}`, severidade: "media", tab: "dashboard",
+        titulo: `Orçamento de ${o.label} quase no limite`, msg: `Já usou ${Math.round(o.pct)}% do orçamento de ${o.label} (${fmt(o.gasto)} de ${fmt(o.limite)}).` });
+    }
+  }
+
+  // 4c) Fluxo de caixa futuro: algum mês projetado fecha no vermelho.
+  const primNeg = (fluxoPrevisto || []).find((f) => f.saldo < 0);
+  if (primNeg) {
+    add({ id: `fluxo-negativo-${primNeg.ano}-${primNeg.mesIdx}`, severidade: "media", tab: "dashboard",
+      titulo: `${primNeg.label} pode fechar no vermelho`, msg: `Na projeção atual, ${primNeg.label}/${primNeg.ano} fecha em ${fmt(primNeg.saldo)} (renda ${fmt(primNeg.renda)} − gastos previstos ${fmt(primNeg.despesas)}).` });
   }
 
   // 5) Faturas de cartão vencendo em até 5 dias (deduplicadas por banco+dia).

@@ -142,6 +142,28 @@ export async function loginWithPasskey({ autofill = false } = {}) {
 export function listPasskeys() { return request("GET", "/auth/webauthn/credentials"); } // { passkeys }
 export function deletePasskey(id) { return request("DELETE", `/auth/webauthn/credentials/${id}`); }
 
+// ─── Dispositivos / sessões ativas ───────────────────────────
+export function listSessions() { return request("GET", "/auth/sessions"); } // { sessions }
+export function revokeSession(id) { return request("DELETE", `/auth/sessions/${id}`); }
+
+// ─── Web Push (notificações no celular) ──────────────────────
+export function pushVapidKey() { return request("GET", "/auth/push/key"); } // { key }
+export function pushSubscribe(sub) { return request("POST", "/auth/push/subscribe", sub); }
+export function pushUnsubscribe(endpoint) { return request("POST", "/auth/push/unsubscribe", { endpoint }); }
+
+// ─── Família (household) ─────────────────────────────────────
+export function householdMembers() { return request("GET", "/auth/household/members"); } // { members, invites, canManage, ownerNome }
+export function createHouseholdInvite(body) { return request("POST", "/auth/household/invites", body); } // { token, url, ... }
+export function revokeHouseholdInvite(id) { return request("DELETE", `/auth/household/invites/${id}`); }
+export function getHouseholdInvite(token) { return request("GET", `/auth/household/invites/${token}`); } // { valido, nome, ownerNome, role }
+export async function acceptHouseholdInvite(token, body) {
+  const data = await request("POST", `/auth/household/invites/${token}/accept`, body);
+  setToken(data.token);
+  return data; // { token, user, access }
+}
+export function setMemberRole(id, role) { return request("PUT", `/auth/household/members/${id}/role`, { role }); }
+export function removeMember(id) { return request("DELETE", `/auth/household/members/${id}`); }
+
 // ─── Estado (dados do domínio) ───────────────────────────────
 const numToInput = (n) => (n && Number(n) !== 0 ? String(n) : "");
 
@@ -173,6 +195,7 @@ export async function getState() {
     parcelados: s.parcelados || [],
     cartoes: s.cartoes || [],
     goals: s.goals || [],
+    budgets: s.budgets || [],
     categoryRules: s.categoryRules || {},
     globalCategoryRules: s.globalCategoryRules || {},
     avisoGlobal: s.avisoGlobal || "",
@@ -214,6 +237,7 @@ export function saveEmprestimos(arr) { return request("PUT", "/api/emprestimos",
 export function saveParcelados(arr) { return request("PUT", "/api/parcelados", arr || []); }
 export function saveCartoes(arr) { return request("PUT", "/api/cartoes", arr || []); }
 export function saveGoals(arr) { return request("PUT", "/api/goals", arr || []); }
+export function saveBudgets(arr) { return request("PUT", "/api/budgets", arr || []); }
 export function saveCategoryRules(map) { return request("PUT", "/api/category-rules", map || {}); }
 export function saveCardProfiles(arr) { return request("PUT", "/api/card-profiles", arr || []); }
 export function saveMembros(arr) { return request("PUT", "/api/membros", arr || []); }

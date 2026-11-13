@@ -1,13 +1,18 @@
 const crypto = require("crypto");
-const { User, Membro, WebauthnCredential } = require("../models");
+const { User, Membro, WebauthnCredential, PushSubscription } = require("../models");
+const push = require("../services/push");
 const { hashPassword, verifyPassword } = require("../utils/password");
 const { signAccessToken } = require("../utils/jwt");
 const { getAccessState, ensureDefaultSubscription } = require("../services/access");
 const { getSetting } = require("../services/settings");
+const household = require("../services/household");
 const {
   issueRefreshToken,
   rotateRefreshToken,
   revokeRefreshFromRequest,
+  listSessions,
+  currentFamilyId,
+  revokeFamilyForUser,
   readRefreshCookie,
   clearRefreshCookie,
 } = require("../services/refreshTokens");
@@ -25,7 +30,9 @@ async function issueSession(user, req, res) {
     userAgent: req.headers["user-agent"],
     ip: req.ip,
   });
-  const access = await getAccessState(user);
+  // Membro herda a assinatura/módulos do titular do household (billingUser = dono).
+  const owner = await household.resolveOwner(user);
+  const access = await getAccessState(user, owner);
   return { token: tokenFor(user), user: user.toSafeJSON(), access };
 }
 
@@ -122,7 +129,8 @@ async function refresh(req, res, next) {
       clearRefreshCookie(res);
       return res.status(401).json({ error: "Usuário não encontrado ou inativo.", code: "no_user" });
     }
-    const access = await getAccessState(user);
+    const owner = await household.resolveOwner(user);
+    const access = await getAccessState(user, owner);
     return res.json({ token: tokenFor(user), user: user.toSafeJSON(), access });
   } catch (err) {
     next(err);
@@ -139,10 +147,41 @@ async function logout(req, res, next) {
   }
 }
 
+// GET /auth/sessions — dispositivos/sessões ativas do usuário (1 família = 1 aparelho).
+async function sessions(req, res, next) {
+  try {
+    const [list, atual] = await Promise.all([listSessions(req.user.id), currentFamilyId(req)]);
+    return res.json({
+      sessions: list.map((s) => ({
+        id: s.familyId,
+        userAgent: s.userAgent || null,
+        ip: s.ip || null,
+        createdAt: s.createdAt,
+        lastSeen: s.lastSeen,
+        expiresAt: s.expiresAt,
+        atual: s.familyId === atual,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /auth/sessions/:id — desconecta um dispositivo (revoga a família).
+async function revokeSession(req, res, next) {
+  try {
+    const ok = await revokeFamilyForUser(req.params.id, req.user.id);
+    if (!ok) return res.status(404).json({ error: "Sessão não encontrada.", code: "not_found" });
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /me — dados do usuário logado + estado de acesso (liberado + módulos).
 async function me(req, res, next) {
   try {
-    const access = await getAccessState(req.user);
+    const access = await getAccessState(req.user, req.dataOwner);
     return res.json({ user: req.user.toSafeJSON(), access });
   } catch (err) {
     next(err);
@@ -306,11 +345,156 @@ async function webauthnLoginVerify(req, res, next) {
   }
 }
 
+// ─── Web Push ────────────────────────────────────────────────────────────────
+
+// GET /auth/push/key — chave pública VAPID (não é segredo; o navegador precisa dela).
+async function pushKey(req, res, next) {
+  try {
+    return res.json({ key: await push.publicKey() });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/push/subscribe — registra (ou atualiza) a inscrição deste aparelho.
+async function pushSubscribe(req, res, next) {
+  try {
+    const b = req.body || {};
+    const keys = b.keys || {};
+    if (!b.endpoint || !keys.p256dh || !keys.auth) {
+      return res.status(400).json({ error: "Inscrição inválida.", code: "bad_request" });
+    }
+    const ua = req.headers["user-agent"] ? String(req.headers["user-agent"]).slice(0, 255) : null;
+    const existing = await PushSubscription.findOne({ where: { endpoint: b.endpoint } });
+    if (existing) {
+      existing.set({ userId: req.user.id, p256dh: keys.p256dh, auth: keys.auth, userAgent: ua });
+      await existing.save();
+    } else {
+      await PushSubscription.create({ userId: req.user.id, endpoint: b.endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent: ua });
+    }
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/push/unsubscribe — remove a inscrição deste aparelho.
+async function pushUnsubscribe(req, res, next) {
+  try {
+    const endpoint = req.body && req.body.endpoint;
+    if (endpoint) await PushSubscription.destroy({ where: { endpoint, userId: req.user.id } });
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ─── Login familiar (household) ──────────────────────────────────────────────
+
+const podeGerirFamilia = (req) => ["owner", "admin"].includes(req.householdRole);
+
+// POST /auth/household/invites — gera um convite (link/código). Owner/admin.
+async function householdInviteCreate(req, res, next) {
+  try {
+    if (!podeGerirFamilia(req)) return res.status(403).json({ error: "Só o titular ou administrador da família pode convidar.", code: "forbidden" });
+    const { nome, role, membroId } = req.body || {};
+    const invite = await household.createInvite(req.dataOwnerId, { nome, role, membroId });
+    const base = process.env.FRONTEND_URL || "http://127.0.0.1:4173";
+    return res.status(201).json({ token: invite.token, url: `${base}/?convite=${encodeURIComponent(invite.token)}`, role: invite.role, nome: invite.nome, expiresAt: invite.expiresAt });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /auth/household/invites/:token — prévia pública do convite.
+async function householdInvitePreview(req, res, next) {
+  try {
+    const invite = await household.getValidInvite(req.params.token);
+    if (!invite) return res.json({ valido: false });
+    const owner = await User.findByPk(invite.ownerId);
+    return res.json({ valido: true, nome: invite.nome || null, role: invite.role, ownerNome: owner ? owner.nome : null });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /auth/household/invites/:token/accept — cria o login do membro e abre sessão.
+async function householdInviteAccept(req, res, next) {
+  try {
+    const { nome, email, senha } = req.body || {};
+    const result = await household.acceptInvite(req.params.token, { nome, email, senha });
+    if (result.error) return res.status(400).json({ error: result.error, code: result.code });
+    return res.status(201).json(await issueSession(result.user, req, res));
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /auth/household/members — membros + convites pendentes do household.
+async function householdMembers(req, res, next) {
+  try {
+    const [members, invites] = await Promise.all([
+      household.listMembers(req.dataOwnerId),
+      podeGerirFamilia(req) ? household.listInvites(req.dataOwnerId) : Promise.resolve([]),
+    ]);
+    return res.json({ members, invites, canManage: podeGerirFamilia(req), ownerNome: req.dataOwner.nome });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /auth/household/members/:id/role — troca o papel de um membro. Owner/admin.
+async function householdSetRole(req, res, next) {
+  try {
+    if (!podeGerirFamilia(req)) return res.status(403).json({ error: "Sem permissão para gerir a família.", code: "forbidden" });
+    const ok = await household.setMemberRole(req.dataOwnerId, req.params.id, req.body && req.body.role);
+    if (!ok) return res.status(404).json({ error: "Membro não encontrado.", code: "not_found" });
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /auth/household/members/:id — remove o login do membro (dados ficam). Owner/admin.
+async function householdRemoveMember(req, res, next) {
+  try {
+    if (!podeGerirFamilia(req)) return res.status(403).json({ error: "Sem permissão para gerir a família.", code: "forbidden" });
+    const ok = await household.removeMember(req.dataOwnerId, req.params.id);
+    if (!ok) return res.status(404).json({ error: "Membro não encontrado.", code: "not_found" });
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /auth/household/invites/:id — revoga um convite pendente. Owner/admin.
+async function householdRevokeInvite(req, res, next) {
+  try {
+    if (!podeGerirFamilia(req)) return res.status(403).json({ error: "Sem permissão para gerir a família.", code: "forbidden" });
+    await household.revokeInvite(req.dataOwnerId, req.params.id);
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   register,
   login,
   refresh,
   logout,
+  sessions,
+  revokeSession,
+  pushKey,
+  pushSubscribe,
+  pushUnsubscribe,
+  householdInviteCreate,
+  householdInvitePreview,
+  householdInviteAccept,
+  householdMembers,
+  householdSetRole,
+  householdRemoveMember,
+  householdRevokeInvite,
   me,
   googleCallback,
   tokenFor,

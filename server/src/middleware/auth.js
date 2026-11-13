@@ -1,6 +1,10 @@
-// Exige um JWT válido e carrega o usuário em req.user.
+// Exige um JWT válido e carrega o usuário em req.user. Resolve também o "dono dos
+// dados" do household (req.dataOwner): num login familiar, o membro opera sobre os
+// dados do titular. Dados ficam em req.dataOwnerId; auth/passkeys/sessões/push
+// continuam usando req.user (são por-pessoa).
 const { verifyToken } = require("../utils/jwt");
 const { User } = require("../models");
+const { resolveOwner } = require("../services/household");
 
 module.exports = async function requireAuth(req, res, next) {
   try {
@@ -23,6 +27,9 @@ module.exports = async function requireAuth(req, res, next) {
     }
 
     req.user = user;
+    req.dataOwner = await resolveOwner(user);
+    req.dataOwnerId = req.dataOwner.id;
+    req.householdRole = user.householdOwnerId ? (user.householdRole || "member") : "owner";
     next();
   } catch (err) {
     next(err);

@@ -2,9 +2,34 @@
 import { useState, useEffect } from "react";
 import { C, fmt } from "../lib/constants";
 import { Card, Label, Field, Inp, Btn, Divider, STitle, IcoTxt, Badge } from "./ui";
-import { X, Save, KeyRound, CircleUser, Users, WalletCards, Fingerprint, Trash2, Plus } from "../lib/icons.jsx";
+import { X, Save, KeyRound, CircleUser, Users, WalletCards, Fingerprint, Trash2, Plus, Smartphone, LogOut, Bell } from "../lib/icons.jsx";
 import { maskCPF, maskPhone } from "../lib/masks";
-import { updateProfile, changePassword, getPlans, listPasskeys, registerPasskey, deletePasskey, webauthnSupported } from "../lib/api";
+import { updateProfile, changePassword, getPlans, listPasskeys, registerPasskey, deletePasskey, webauthnSupported, listSessions, revokeSession, householdMembers, createHouseholdInvite, revokeHouseholdInvite, setMemberRole, removeMember } from "../lib/api";
+import { pushSupported, pushStatus, enablePush, disablePush } from "../lib/push";
+
+const ROLE_LABEL = { owner: "Titular", admin: "Admin", member: "Membro", viewer: "Visualizador" };
+
+// userAgent → nome amigável do aparelho ("iPhone · Safari").
+function nomeDispositivo(ua) {
+  if (!ua) return "Dispositivo desconhecido";
+  const s = ua.toLowerCase();
+  const os = s.includes("iphone") ? "iPhone" : s.includes("ipad") ? "iPad" : s.includes("android") ? "Android"
+    : s.includes("windows") ? "Windows" : (s.includes("mac os") || s.includes("macintosh")) ? "Mac" : s.includes("linux") ? "Linux" : "";
+  const nav = s.includes("edg/") ? "Edge" : (s.includes("chrome/") && !s.includes("edg/")) ? "Chrome"
+    : s.includes("firefox/") ? "Firefox" : (s.includes("safari/") && !s.includes("chrome/")) ? "Safari" : "";
+  return [os, nav].filter(Boolean).join(" · ") || "Navegador";
+}
+function haQuanto(iso) {
+  if (!iso) return "";
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return "agora";
+  if (diff < 3600) return `há ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `há ${Math.floor(diff / 3600)} h`;
+  const dias = Math.floor(diff / 86400);
+  if (dias === 1) return "ontem";
+  if (dias < 30) return `há ${dias} dias`;
+  return new Date(iso).toLocaleDateString("pt-BR");
+}
 import { MembrosManager } from "./Membros.jsx";
 
 export default function ProfileModal({ user, onClose, onUpdated, membros = [], onSaveMembros, access = null }) {
@@ -35,6 +60,64 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
     try { await deletePasskey(id); setPasskeys((ps) => ps.filter((p) => p.id !== id)); }
     catch (e) { setPkErr(e.message || "Não foi possível remover."); }
     finally { setPkBusy(false); }
+  }
+
+  // Dispositivos / sessões ativas.
+  const [sessions, setSessions] = useState([]);
+  const [sessBusy, setSessBusy] = useState(false);
+  const [sessErr, setSessErr] = useState("");
+  useEffect(() => { listSessions().then((r) => setSessions(r.sessions || [])).catch(() => {}); }, []);
+  async function desconectar(id) {
+    setSessErr(""); setSessBusy(true);
+    try { await revokeSession(id); setSessions((ss) => ss.filter((s) => s.id !== id)); }
+    catch (e) { setSessErr(e.message || "Não foi possível desconectar."); }
+    finally { setSessBusy(false); }
+  }
+
+  // Família (logins / papéis).
+  const [fam, setFam] = useState({ members: [], invites: [], canManage: false, ownerNome: "" });
+  const [famErr, setFamErr] = useState("");
+  const [famBusy, setFamBusy] = useState(false);
+  const [novoConvite, setNovoConvite] = useState({ nome: "", role: "member" });
+  const [linkConvite, setLinkConvite] = useState("");
+  const recarregarFam = () => householdMembers().then(setFam).catch(() => {});
+  useEffect(() => { recarregarFam(); }, []);
+  async function gerarConvite() {
+    setFamErr(""); setFamBusy(true); setLinkConvite("");
+    try {
+      const r = await createHouseholdInvite({ nome: novoConvite.nome.trim(), role: novoConvite.role });
+      setLinkConvite(r.url);
+      setNovoConvite({ nome: "", role: "member" });
+      recarregarFam();
+    } catch (e) { setFamErr(e.message || "Não foi possível gerar o convite."); }
+    finally { setFamBusy(false); }
+  }
+  async function trocarPapel(id, role) {
+    setFamErr("");
+    try { await setMemberRole(id, role); recarregarFam(); }
+    catch (e) { setFamErr(e.message || "Não foi possível alterar o papel."); }
+  }
+  async function removerMembro(id) {
+    setFamErr(""); setFamBusy(true);
+    try { await removeMember(id); recarregarFam(); }
+    catch (e) { setFamErr(e.message || "Não foi possível remover."); }
+    finally { setFamBusy(false); }
+  }
+  async function revogarConvite(id) {
+    try { await revokeHouseholdInvite(id); recarregarFam(); } catch { /* ignore */ }
+  }
+
+  // Notificações push.
+  const [push, setPush] = useState("off");
+  const [pushErr, setPushErr] = useState("");
+  useEffect(() => { if (pushSupported()) pushStatus().then(setPush).catch(() => {}); else setPush("unsupported"); }, []);
+  async function togglePush() {
+    setPushErr("");
+    const antes = push; setPush("busy");
+    try {
+      if (antes === "on") { await disablePush(); setPush("off"); }
+      else { await enablePush(); setPush("on"); }
+    } catch (e) { setPushErr(e.message || "Não foi possível alterar as notificações."); setPush(antes); }
   }
 
   // Plano atual + valor pago (base + dependentes × valor por dependente).
@@ -168,6 +251,122 @@ export default function ProfileModal({ user, onClose, onUpdated, membros = [], o
               <Btn variant="ghost" onClick={addPasskey} disabled={pkBusy} style={{ marginTop: 4 }}><IcoTxt Icon={Plus}>Adicionar Face ID / digital</IcoTxt></Btn>
             </>
           )}
+
+          {/* Notificações push */}
+          <Divider />
+          <STitle><IcoTxt Icon={Bell}>Notificações no celular</IcoTxt></STitle>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Avisos de fatura e salário</div>
+              <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+                {push === "unsupported" ? "Este navegador não suporta notificações."
+                  : push === "denied" ? "Permissão bloqueada — libere nas configurações do navegador."
+                  : push === "unavailable" ? "Disponível no app publicado (instale/abra o PWA)."
+                  : "Receba um aviso quando a fatura estiver perto de vencer ou o salário cair."}
+              </div>
+            </div>
+            {(push === "on" || push === "off" || push === "busy") && (
+              <Btn variant={push === "on" ? "ghost" : "primary"} onClick={togglePush} disabled={push === "busy"} style={{ flex: "0 0 auto", padding: "9px 14px" }}>
+                {push === "busy" ? "..." : push === "on" ? "Desativar" : "Ativar"}
+              </Btn>
+            )}
+          </div>
+          {pushErr && <Msg err={pushErr} />}
+
+          {/* Dispositivos / sessões ativas */}
+          <Divider />
+          <STitle><IcoTxt Icon={Smartphone}>Dispositivos conectados</IcoTxt></STitle>
+          <p style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>Aparelhos com a sua conta conectada. Se não reconhecer algum, desconecte — ele precisará entrar de novo.</p>
+          <div style={{ display: "grid", gap: 8 }}>
+            {sessions.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>Nenhuma sessão ativa encontrada.</div>}
+            {sessions.map((s) => (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px" }}>
+                <Smartphone size={16} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    {nomeDispositivo(s.userAgent)}
+                    {s.atual && <Badge label="Este aparelho" color={C.emerald} />}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: C.muted }}>{s.ip ? `${s.ip} · ` : ""}ativo {haQuanto(s.lastSeen)}</div>
+                </div>
+                {s.atual
+                  ? <span style={{ fontSize: 10.5, color: C.muted }}>atual</span>
+                  : <button className="mini-act" aria-label="Desconectar dispositivo" disabled={sessBusy} onClick={() => desconectar(s.id)} style={{ background: "color-mix(in srgb, var(--danger) 10%, transparent)", border: `1px solid color-mix(in srgb, var(--danger) 22%, transparent)`, borderRadius: 8, color: C.red, cursor: "pointer" }}><LogOut size={14} /></button>}
+              </div>
+            ))}
+          </div>
+          {sessErr && <Msg err={sessErr} />}
+
+          {/* Acesso da família (logins + papéis) */}
+          <Divider />
+          <STitle><IcoTxt Icon={Users}>Acesso da família</IcoTxt></STitle>
+          {fam.canManage ? (
+            <>
+              <p style={{ fontSize: 11, color: C.muted, marginBottom: 12, lineHeight: 1.6 }}>Dê um login próprio a cada familiar. Todos veem as finanças da família; o papel define quem edita. <strong style={{ color: C.subtle }}>Visualizador</strong> é só leitura.</p>
+              <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                {fam.members.map((m) => (
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                        {m.nome}
+                        {m.id === user.id && <Badge label="Você" color={C.indigo} />}
+                        {m.isOwner && <Badge label="Titular" color={C.emerald} />}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.email}</div>
+                    </div>
+                    {m.isOwner ? (
+                      <span style={{ fontSize: 11, color: C.muted }}>{ROLE_LABEL.owner}</span>
+                    ) : (
+                      <>
+                        <select value={m.role} onChange={(e) => trocarPapel(m.id, e.target.value)} disabled={famBusy} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 8, background: C.fill, color: C.text, border: `1px solid ${C.border}` }}>
+                          <option value="admin">Admin</option>
+                          <option value="member">Membro</option>
+                          <option value="viewer">Visualizador</option>
+                        </select>
+                        <button className="mini-act" aria-label="Remover acesso" disabled={famBusy} onClick={() => removerMembro(m.id)} style={{ background: "color-mix(in srgb, var(--danger) 10%, transparent)", border: `1px solid color-mix(in srgb, var(--danger) 22%, transparent)`, borderRadius: 8, color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {fam.invites.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 6 }}>Convites pendentes</div>
+                  {fam.invites.map((i) => (
+                    <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.subtle, marginBottom: 4 }}>
+                      <span style={{ flex: 1 }}>{i.nome || "Convite"} · {ROLE_LABEL[i.role] || i.role}</span>
+                      <button onClick={() => revogarConvite(i.id)} style={{ background: "none", border: 0, color: C.red, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Revogar</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Gerar convite */}
+              <div style={{ background: "var(--fill-2)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+                <Label style={{ marginBottom: 8 }}>Convidar familiar</Label>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <Inp placeholder="Nome (opcional)" value={novoConvite.nome} onChange={(e) => setNovoConvite((p) => ({ ...p, nome: e.target.value }))} style={{ flex: 1 }} />
+                  <select value={novoConvite.role} onChange={(e) => setNovoConvite((p) => ({ ...p, role: e.target.value }))} style={{ fontSize: 12, padding: "0 8px", borderRadius: 8, background: C.fill, color: C.text, border: `1px solid ${C.border}` }}>
+                    <option value="admin">Admin</option>
+                    <option value="member">Membro</option>
+                    <option value="viewer">Visualizador</option>
+                  </select>
+                </div>
+                <Btn variant="ghost" onClick={gerarConvite} disabled={famBusy} style={{ width: "100%" }}><IcoTxt Icon={Plus}>Gerar link de convite</IcoTxt></Btn>
+                {linkConvite && (
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+                    <Inp readOnly value={linkConvite} style={{ flex: 1, fontSize: 11 }} onFocus={(e) => e.target.select()} />
+                    <Btn variant="ghost" onClick={() => { try { navigator.clipboard.writeText(linkConvite); } catch { /* ignore */ } }} style={{ flex: "0 0 auto", padding: "9px 12px" }}>Copiar</Btn>
+                  </div>
+                )}
+                {linkConvite && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>Compartilhe esse link (WhatsApp, etc.). Ele expira em 7 dias e só pode ser usado uma vez.</div>}
+              </div>
+            </>
+          ) : (
+            <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6 }}>Você faz parte da família de <strong style={{ color: C.text }}>{fam.ownerNome || "—"}</strong> — papel <strong style={{ color: C.text }}>{ROLE_LABEL[user.householdRole] || user.householdRole}</strong>. As finanças são compartilhadas com a família.</p>
+          )}
+          {famErr && <Msg err={famErr} />}
 
           {onSaveMembros && (
             <>
