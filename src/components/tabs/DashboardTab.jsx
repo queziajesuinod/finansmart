@@ -97,7 +97,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
 
       {/* KPIs — leitura rápida do mês */}
       {(totalRenda > 0 || totalDespesas > 0) && (
-        <div className="stat-grid">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
           {[
             { label: "Saldo atual", v: saldoAtual, c: saldoAtual < 0 ? C.red : C.emerald, Icon: PiggyBank, hint: "Renda − gastos até agora" },
             { label: "Gasto do mês", v: totalDespesas, c: C.amber, Icon: ReceiptText, hint: totalRenda > 0 ? `${fmtPct(pctGasto)} da renda` : null },
@@ -105,7 +105,7 @@ export default function DashboardTab({ income, setIncome, rendaStr, rendaHerdada
           ].map((k) => (
             <div key={k.label} style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: "var(--r-md)", padding: "12px 14px", boxShadow: "var(--shadow-sm)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 10.5, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".04em" }}><k.Icon size={13} color={k.c} strokeWidth={2.2} /> {k.label}</div>
-              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.02em", marginTop: 5, color: k.c, fontVariantNumeric: "tabular-nums" }}>{fmt(k.v)}</div>
+              <div style={{ fontSize: "clamp(15px, 4.4vw, 18px)", fontWeight: 800, letterSpacing: "-.03em", marginTop: 5, color: k.c, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(k.v)}</div>
               {k.hint && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>{k.hint}</div>}
             </div>
           ))}
