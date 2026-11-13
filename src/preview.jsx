@@ -32,6 +32,11 @@ const MOCK_STATE = {
     { id: 1, nome: "Reserva de emergência", alvo: 30000, atual: 18500, prazo: "2027-06-30" },
     { id: 2, nome: "Viagem Europa", alvo: 15000, atual: 4200, prazo: "2027-12-20" },
   ],
+  budgets: [
+    { id: "b1", categoria: "alimentacao", limite: 800, mesRef: null },
+    { id: "b2", categoria: "transporte", limite: 300, mesRef: null },
+    { id: "b3", categoria: "lazer", limite: 150, mesRef: null },
+  ],
   investimentos: [
     { id: 1, instituicao: "Nubank", nome: "Caixinha Turbo", tipo: "RF", indexador: "CDI", percentual: 100, valorAplicado: 15000, dataAplicacao: "2025-03-10", membroId: null, historico: [{ mesRef: "2026-10", saldo: 16820 }] },
     { id: 2, instituicao: "XP Investimentos", nome: "Tesouro Selic 2029", tipo: "RF", indexador: "SELIC", percentual: 100, valorAplicado: 8000, dataAplicacao: "2025-08-01", membroId: null, historico: [{ mesRef: "2026-10", saldo: 8540 }] },
