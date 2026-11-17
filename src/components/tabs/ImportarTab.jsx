@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useRef, useEffect } from "react";
-import { C, CATEGORIES, todayStr, fmt, genId, tint, addMonths, monthDiff } from "../../lib/constants";
+import { C, CATEGORIES, MONTH_NAMES, todayStr, fmt, genId, tint, addMonths, monthDiff } from "../../lib/constants";
 import { primeiraParcelaCartao } from "../../lib/finance";
 import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { parseFatura, aplicarRegras, merchantKey, autoCategoria } from "../../lib/parseFatura";
@@ -589,7 +589,16 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     const dupTxt = duplicadas > 0 ? ` ${duplicadas} compra${duplicadas > 1 ? "s" : ""} duplicada${duplicadas > 1 ? "s" : ""} (mesma data e valor) ignorada${duplicadas > 1 ? "s" : ""}.` : "";
     const somaPags = pags.reduce((s, p) => s + p.valor, 0);
     const pagTxt = pags.length ? ` ${pags.length} pagamento${pags.length > 1 ? "s" : ""} registrado${pags.length > 1 ? "s" : ""} (${fmt(somaPags)}) no histórico do cartão — não conta como gasto.` : "";
-    diz(`Cartão "${cartao.nome}" importado com ${compras.length} compras (${fmt(total)})!${dupTxt}${pagTxt}${msgParc} Veja na aba Cartões de Crédito.`, "ok");
+    // Em qual mês a fatura foi arquivada (pelo vencimento). Se for diferente do mês
+    // que o usuário está vendo, avisa para trocar o seletor — senão a fatura "some"
+    // da lista (filtrada por mês) e parece que só os parcelados foram salvos.
+    const [mrY, mrM] = String(cartao.mesRef).split("-").map(Number);
+    const mesFaturaNome = MONTH_NAMES[mrM] || "";
+    const noMesVisivel = mrY === year && mrM === monthIdx;
+    const ondeVer = noMesVisivel
+      ? " Veja na aba Cartões de Crédito."
+      : ` A fatura entrou em ${mesFaturaNome}/${mrY} (pela data de vencimento) — mude o seletor de mês no topo para ${mesFaturaNome} para ver todas as ${compras.length} compras na aba Cartões de Crédito.`;
+    diz(`Cartão "${cartao.nome}" importado com ${compras.length} compras (${fmt(total)})!${dupTxt}${pagTxt}${msgParc}${ondeVer}`, "ok");
     if (setTab) setTab("cartoes");
   }
 
