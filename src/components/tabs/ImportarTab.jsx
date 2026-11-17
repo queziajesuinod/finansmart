@@ -5,12 +5,15 @@ import { primeiraParcelaCartao } from "../../lib/finance";
 import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { parseFatura, aplicarRegras, merchantKey, autoCategoria } from "../../lib/parseFatura";
 import { authConfig, aiImportFatura, getPlans, saveImportLog } from "../../lib/api";
-import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight } from "../../lib/icons.jsx";
+import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight, RefreshCw, CircleCheck, TriangleAlert, Sparkles } from "../../lib/icons.jsx";
 import { membrosOrdenados, principalId, principalDe } from "../Membros.jsx";
 
 export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, setCartoes, parcelados, setParcelados, categoryRules, setCategoryRules, globalCategoryRules = {}, cardProfiles, setTab, membros = [], setMembros, temAssistente = false, access = null }) {
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsgRaw] = useState("");
+  const [msgTipo, setMsgTipo] = useState("info"); // info | ok | warn | erro (o spinner usa loading/loadingIA)
+  // Mostra uma nota de status; o tipo escolhe cor e ícone no render.
+  const diz = (texto, tipo = "info") => { setMsgRaw(texto); setMsgTipo(tipo); };
   const [fonteImport, setFonteImport] = useState("local"); // "local" | "ia" — p/ o log de importação
   const [items, setItems] = useState([]);
   const [modo, setModo] = useState("pdf");
@@ -92,13 +95,20 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   // não atualizou). auto=true muda a mensagem e é usado na reconferência.
   async function lerComIA(txtArg, auto) {
     const txt = (typeof txtArg === "string" && txtArg) ? txtArg : texto;
-    if (!txt || txt.trim().length < 20) { setMsg("Não há texto para analisar. Envie um PDF ou cole o texto da fatura primeiro."); return; }
+    if (!txt || txt.trim().length < 20) { diz("Não há texto para analisar. Envie um PDF ou cole o texto da fatura primeiro.", "warn"); return; }
     const { refYear, refMonth } = refParaIA(txt);
     setLoadingIA(true);
-    setMsg(auto ? "A leitura ficou incompleta — completando com IA..." : "Analisando a fatura com IA (isso envia o texto ao servidor)...");
+    diz(auto ? "A leitura ficou incompleta — completando com IA..." : "Analisando a fatura com IA (isso envia o texto ao servidor)...");
     try {
       const r = await aiImportFatura({ texto: txt, refYear, refMonth });
-      if (!r || !Array.isArray(r.compras) || !r.compras.length) { setMsg("A IA não encontrou compras neste texto. Confira o texto extraído e tente novamente."); setLoadingIA(false); return; }
+      if (!r || !Array.isArray(r.compras) || !r.compras.length) {
+        // No disparo automático, a lista local já está na tela: não a apaga com erro.
+        diz(auto
+          ? "A lista foi lida e está pronta para revisar abaixo. (A conferência extra por IA não encontrou compras novas, mas as já lidas continuam valendo.)"
+          : "A IA não encontrou compras neste texto. Confira o texto extraído e tente novamente.",
+          auto ? "ok" : "warn");
+        setLoadingIA(false); return;
+      }
       const itens = r.compras.map((c) => ({ ...c, portador: c.portador || "Titular", final: c.final || "" }));
       itens.totalOficial = r.totalOficial || null;
       mostrarResultado(itens, txt, "ia");
@@ -114,9 +124,12 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
         }));
       }
     } catch (e) {
-      if (e.code === "ai_disabled") setMsg("A leitura com IA não está configurada no servidor.");
-      else if (e.status === 429) setMsg("O serviço de IA está no limite de uso agora. Aguarde um minuto e tente de novo.");
-      else setMsg("Não consegui ler com IA agora. Você ainda pode revisar/corrigir a lista manualmente. " + (e.message || ""));
+      // Reforço automático: a lista local já está na tela. Uma falha da IA (ex.:
+      // JSON inesperado) não deve apagar o resultado bom nem assustar o usuário.
+      if (auto) diz("A lista foi lida e está pronta para revisar abaixo. (A conferência extra por IA não funcionou agora, mas isso não afeta as compras já lidas.)", "warn");
+      else if (e.code === "ai_disabled") diz("A leitura com IA não está configurada no servidor.", "erro");
+      else if (e.status === 429) diz("O serviço de IA está no limite de uso agora. Aguarde um minuto e tente de novo.", "warn");
+      else diz("Não consegui ler com IA agora. Você ainda pode revisar/corrigir a lista manualmente. " + (e.message || ""), "erro");
     }
     setLoadingIA(false);
   }
@@ -282,7 +295,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     }
     const aprendidoTxt = aprendidas > 0 ? ` ${aprendidas} categorizada${aprendidas > 1 ? "s" : ""} automaticamente pelo que você já ensinou.` : "";
     const prefixoMsg = fonte === "ia" ? "IA: " : "";
-    setMsg(`${prefixoMsg}${comRegras.length} transações encontradas${parc > 0 ? ` (${parc} parcelada${parc > 1 ? "s" : ""})` : ""}. Revise e confirme abaixo.${aprendidoTxt}${aviso}`);
+    diz(`${prefixoMsg}${comRegras.length} transações encontradas${parc > 0 ? ` (${parc} parcelada${parc > 1 ? "s" : ""})` : ""}. Revise e confirme abaixo.${aprendidoTxt}${aviso}`, bate ? "ok" : "warn");
 
     // Reforço automático: se a leitura LOCAL ficou incompleta (faltou valor) e a
     // IA está ligada, completa sozinha — sem precisar clicar no botão.
@@ -292,10 +305,10 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
   }
 
   function processarTexto(txt) {
-    if (!txt || txt.trim().length < 10) { setMsg("Cole o texto da fatura primeiro."); return; }
+    if (!txt || txt.trim().length < 10) { diz("Cole o texto da fatura primeiro.", "warn"); return; }
     const parsed = parseFatura(txt, year, monthIdx);
     if (!parsed.length) {
-      setMsg("Não encontrei transações no formato esperado. As linhas precisam ter data (dd/mm), descrição e valor (ex: 08/05 UberRides 11,90). Você ainda pode lançar manualmente na aba Lançamentos.");
+      diz("Não encontrei transações no formato esperado. As linhas precisam ter data (dd/mm), descrição e valor (ex: 08/05 UberRides 11,90). Você ainda pode lançar manualmente na aba Lançamentos.", "warn");
       setItems([]); return;
     }
     mostrarResultado(parsed, txt);
@@ -303,9 +316,9 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
 
   async function handleFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
-    setItems([]); setMsg("");
-    if (file.type && file.type !== "application/pdf") { setMsg("O arquivo precisa ser um PDF."); e.target.value = ""; return; }
-    setLoading(true); setMsg("Lendo o PDF no seu dispositivo...");
+    setItems([]); diz("");
+    if (file.type && file.type !== "application/pdf") { diz("O arquivo precisa ser um PDF.", "erro"); e.target.value = ""; return; }
+    setLoading(true); diz("Lendo o PDF no seu dispositivo...");
     try {
       if (!window.pdfjsLib) {
         await new Promise((res, rej) => {
@@ -316,7 +329,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
         });
         if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
       }
-      if (!window.pdfjsLib) { setMsg("Não consegui carregar o leitor de PDF (sem internet?). Use a opção \"Colar texto\" abaixo."); setLoading(false); e.target.value = ""; return; }
+      if (!window.pdfjsLib) { diz("Não consegui carregar o leitor de PDF (sem internet?). Use a opção \"Colar texto\" abaixo.", "erro"); setLoading(false); e.target.value = ""; return; }
 
       const buf = await file.arrayBuffer();
       const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
@@ -365,19 +378,19 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
           bandas.forEach((b) => { const t = montar(b.itens); if (t) fullText += t + "\n"; });
         }
       }
-      if (!fullText.trim()) { setMsg("O PDF não tem texto selecionável (parece ser uma imagem escaneada). Tente enviar o PDF original gerado pelo app/site do banco, ou digite as compras na opção \"Colar texto\"."); setLoading(false); e.target.value = ""; return; }
+      if (!fullText.trim()) { diz("O PDF não tem texto selecionável (parece ser uma imagem escaneada). Tente enviar o PDF original gerado pelo app/site do banco, ou digite as compras na opção \"Colar texto\".", "warn"); setLoading(false); e.target.value = ""; return; }
 
       setTexto(fullText);
 
       const parsed = parseFatura(fullText, year, monthIdx);
       if (!parsed.length) {
         setModo("texto");
-        setMsg("Li o texto do PDF, mas não reconheci as compras no formato automático. O texto extraído está logo abaixo — confira, ajuste se precisar e clique em \"Processar texto\".");
+        diz("Li o texto do PDF, mas não reconheci as compras no formato automático. O texto extraído está logo abaixo — confira, ajuste se precisar e clique em \"Processar texto\".", "warn");
         setLoading(false); e.target.value = ""; return;
       }
       mostrarResultado(parsed, fullText);
     } catch (err) {
-      setMsg("Não consegui ler este PDF automaticamente. Use a opção \"Colar texto\" abaixo — é rápido e funciona sempre.");
+      diz("Não consegui ler este PDF automaticamente. Use a opção \"Colar texto\" abaixo — é rápido e funciona sempre.", "erro");
       setModo("texto");
     }
     setLoading(false); e.target.value = "";
@@ -432,7 +445,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     const duplicadas = todas.length - compras.length;
 
     if (compras.length === 0) {
-      setMsg(`Esta fatura já foi importada — todas as ${todas.length} compras já existem (mesma data e valor). Nada foi duplicado.`);
+      diz(`Esta fatura já foi importada — todas as ${todas.length} compras já existem (mesma data e valor). Nada foi duplicado.`, "info");
       return;
     }
 
@@ -576,7 +589,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
     const dupTxt = duplicadas > 0 ? ` ${duplicadas} compra${duplicadas > 1 ? "s" : ""} duplicada${duplicadas > 1 ? "s" : ""} (mesma data e valor) ignorada${duplicadas > 1 ? "s" : ""}.` : "";
     const somaPags = pags.reduce((s, p) => s + p.valor, 0);
     const pagTxt = pags.length ? ` ${pags.length} pagamento${pags.length > 1 ? "s" : ""} registrado${pags.length > 1 ? "s" : ""} (${fmt(somaPags)}) no histórico do cartão — não conta como gasto.` : "";
-    setMsg(`Cartão "${cartao.nome}" importado com ${compras.length} compras (${fmt(total)})!${dupTxt}${pagTxt}${msgParc} Veja na aba Cartões de Crédito.`);
+    diz(`Cartão "${cartao.nome}" importado com ${compras.length} compras (${fmt(total)})!${dupTxt}${pagTxt}${msgParc} Veja na aba Cartões de Crédito.`, "ok");
     if (setTab) setTab("cartoes");
   }
 
@@ -592,7 +605,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
 
         <div style={{ display: "flex", gap: 6, background: "var(--fill-2)", borderRadius: 10, padding: 4, marginBottom: 14 }}>
           {[{ id: "pdf", label: "Enviar PDF", Icon: FilePlus }, { id: "texto", label: "Colar / editar texto", Icon: ScrollText }].map((t) => (
-            <button key={t.id} onClick={() => { setModo(t.id); setMsg(""); }} style={{ flex: 1, padding: "9px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: modo === t.id ? tint(C.accent, 90) : "transparent", color: modo === t.id ? "#fff" : C.muted }}><t.Icon size={14} /> {t.label}</button>
+            <button key={t.id} onClick={() => { setModo(t.id); diz(""); }} style={{ flex: 1, padding: "9px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: modo === t.id ? tint(C.accent, 90) : "transparent", color: modo === t.id ? "#fff" : C.muted }}><t.Icon size={14} /> {t.label}</button>
           ))}
         </div>
 
@@ -619,7 +632,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
             <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Cole aqui o texto da fatura (ou envie um PDF na aba ao lado e o texto extraído aparecerá aqui para conferência)..." style={{ width: "100%", minHeight: 160, padding: "11px 13px", background: "var(--fill)", border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, fontSize: 12, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "monospace" }} />
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
               <Btn onClick={() => processarTexto(texto)} style={{ flex: 1 }}><IcoTxt Icon={Search}>Processar texto</IcoTxt></Btn>
-              {texto && <Btn variant="ghost" onClick={() => { setTexto(""); setMsg(""); }}>Limpar</Btn>}
+              {texto && <Btn variant="ghost" onClick={() => { setTexto(""); diz(""); }}>Limpar</Btn>}
             </div>
           </>
         )}
@@ -636,7 +649,22 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
           </div>
         )}
 
-        {msg && <div style={{ marginTop: 12, padding: "9px 12px", background: "var(--fill)", borderRadius: 9, fontSize: 12, color: C.subtle, lineHeight: 1.6 }}>{msg}</div>}
+        {msg && (() => {
+          const carregando = loading || loadingIA;
+          const ESTILOS = {
+            ok: { cor: C.emerald, Ico: CircleCheck },
+            warn: { cor: C.amber, Ico: TriangleAlert },
+            erro: { cor: C.red, Ico: TriangleAlert },
+            info: { cor: C.accent, Ico: Sparkles },
+          };
+          const { cor, Ico } = carregando ? { cor: C.accent, Ico: RefreshCw } : (ESTILOS[msgTipo] || ESTILOS.info);
+          return (
+            <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "flex-start", padding: "11px 13px", background: tint(cor, 9), border: `1px solid ${tint(cor, 28)}`, borderRadius: 11 }}>
+              <Ico size={17} strokeWidth={2.4} style={{ color: cor, flexShrink: 0, marginTop: 1, ...(carregando ? { animation: "jp-rot .8s linear infinite" } : null) }} />
+              <span style={{ fontSize: 12.5, color: C.subtle, lineHeight: 1.55 }}>{msg}</span>
+            </div>
+          );
+        })()}
       </Card>
 
       {items.length > 0 && (
@@ -741,7 +769,7 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <Btn onClick={handleSalvar} style={{ flex: 1 }}>Salvar cartão com {items.length} compras</Btn>
-            <Btn variant="ghost" onClick={() => { setItems([]); setMsg(""); }}>Cancelar</Btn>
+            <Btn variant="ghost" onClick={() => { setItems([]); diz(""); }}>Cancelar</Btn>
           </div>
         </Card>
       )}

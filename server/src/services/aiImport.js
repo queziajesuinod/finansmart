@@ -107,11 +107,16 @@ async function aiCompletion(messages, { json = false, maxTokens = 1024, temperat
   err.code = "ai_rate_limited"; err.status = 429; throw err;
 }
 
-// Alguns modelos embrulham o JSON em ```json ... ``` mesmo com JSON mode.
-function limparJson(raw) {
-  const s = String(raw || "").trim();
-  const m = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return m ? m[1] : s;
+// Interpreta o JSON da IA mesmo quando vem "sujo": embrulhado em ```json ... ```
+// ou com texto antes/depois. Último recurso: recorta do 1º { ao último }.
+function extrairJson(raw) {
+  let s = String(raw || "").trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fence) s = fence[1].trim();
+  try { return JSON.parse(s || "{}"); } catch { /* tenta recortar abaixo */ }
+  const i = s.indexOf("{"), j = s.lastIndexOf("}");
+  if (i >= 0 && j > i) { try { return JSON.parse(s.slice(i, j + 1)); } catch { /* desiste */ } }
+  return null;
 }
 
 // Uma chamada à IA com JSON mode para a leitura de fatura.
@@ -120,8 +125,9 @@ async function chamarIA(conteudo, refYear, refMonth) {
     [{ role: "system", content: systemPrompt(refYear, refMonth) }, { role: "user", content: `Texto da fatura:\n\n${conteudo}` }],
     { json: true, maxTokens: 8000, task: "import" }
   );
-  try { return JSON.parse(limparJson(raw) || "{}"); }
-  catch { const err = new Error("A IA respondeu em formato inesperado."); err.code = "ai_bad_json"; err.status = 502; throw err; }
+  const parsed = extrairJson(raw);
+  if (!parsed) { const err = new Error("A IA respondeu em formato inesperado."); err.code = "ai_bad_json"; err.status = 502; throw err; }
+  return parsed;
 }
 
 // Normaliza a resposta da IA em { compras, totalOficial, cartao }.
