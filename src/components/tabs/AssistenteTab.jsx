@@ -48,7 +48,7 @@ export default function AssistenteTab({ chat, setChat, totalRenda, totalDespesas
       setChat((p) => [...p, { role: "assistant", content: r.resposta || "Não consegui responder." }]);
     } catch (e) {
       const txt = e.code === "ai_disabled"
-        ? "O assistente com IA ainda não está configurado no servidor (falta a chave da Groq)."
+        ? "O assistente com IA ainda não está configurado no servidor (falta a chave do provedor de IA)."
         : e.status === 429
         ? "O serviço de IA está no limite de uso agora. Tente de novo em um minuto."
         : "Não consegui conectar ao assistente agora. Tente novamente.";

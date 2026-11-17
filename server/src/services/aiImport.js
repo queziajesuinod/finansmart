@@ -1,17 +1,48 @@
-// Leitura de faturas com IA (reforço). Usa a API da Groq (compatível com OpenAI),
-// gratuita e que NÃO treina com os dados enviados. Recebe o TEXTO já extraído do
-// PDF no dispositivo do usuário (o PDF em si nunca sai do aparelho) e devolve as
-// compras estruturadas em JSON. A chave fica só no servidor (GROQ_API_KEY).
+// Leitura de faturas com IA (reforço). Recebe o TEXTO já extraído do PDF no
+// dispositivo do usuário (o PDF em si nunca sai do aparelho) e devolve as
+// compras estruturadas em JSON. As chaves ficam só no servidor.
+//
+// Provedor configurável por env (todos via endpoint compatível com OpenAI):
+//   AI_PROVIDER=groq|gemini          padrão para tudo (default: groq)
+//   AI_IMPORT_PROVIDER=...           sobrescreve só a leitura de fatura
+//   AI_ASSISTANT_PROVIDER=...        sobrescreve só o assistente
+// Privacidade: Groq não treina com os dados; Gemini só NÃO treina no plano PAGO
+// da API (o gratuito pode usar os dados) — use chave de projeto com billing.
 
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const { mascararFatura } = require("./piiMask");
+
+const PROVIDERS = {
+  groq: {
+    nome: "Groq",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    key: () => process.env.GROQ_API_KEY,
+    model: () => process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+  },
+  gemini: {
+    nome: "Gemini",
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    key: () => process.env.GEMINI_API_KEY,
+    model: () => process.env.GEMINI_MODEL || "gemini-3.7-flash",
+  },
+};
+
+const TASK_ENV = { import: "AI_IMPORT_PROVIDER", assistant: "AI_ASSISTANT_PROVIDER" };
+
+function providerFor(task = "import") {
+  const nome = (process.env[TASK_ENV[task]] || process.env.AI_PROVIDER || "groq").trim().toLowerCase();
+  const p = PROVIDERS[nome];
+  if (!p) throw Object.assign(new Error(`Provedor de IA desconhecido: "${nome}".`), { code: "ai_disabled", status: 501 });
+  return p;
+}
 
 const CATEGORIAS = [
   "moradia", "alimentacao", "transporte", "saude",
   "lazer", "educacao", "vestuario", "assinaturas", "outros",
 ];
 
-const aiEnabled = () => Boolean(process.env.GROQ_API_KEY);
+const aiEnabled = (task = "import") => {
+  try { return Boolean(providerFor(task).key()); } catch { return false; }
+};
 
 function systemPrompt(refYear, refMonth) {
   return `Você é um extrator de faturas de cartão de crédito brasileiras. Recebe o TEXTO bruto de uma fatura (pode estar bagunçado, com colunas embaralhadas) e devolve APENAS as compras/lançamentos DESTA fatura, em JSON.
@@ -42,19 +73,21 @@ Responda SOMENTE com JSON válido no formato:
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Chamada genérica ao Groq (reutilizada pelo importador e pelo assistente).
-// Retorna o texto da resposta. json=true força response_format JSON. 1 retry em 429.
-async function groqCompletion(messages, { json = false, maxTokens = 1024, temperature } = {}) {
-  if (!aiEnabled()) { const err = new Error("Serviço de IA não configurado no servidor."); err.code = "ai_disabled"; err.status = 501; throw err; }
-  const body = { model: MODEL, temperature: temperature != null ? temperature : (json ? 0 : 0.3), max_tokens: maxTokens, messages };
+// Chamada genérica (reutilizada pelo importador e pelo assistente). task escolhe
+// o provedor ("import" | "assistant"). Retorna o texto da resposta.
+// json=true força response_format JSON. 1 retry em 429.
+async function aiCompletion(messages, { json = false, maxTokens = 1024, temperature, task = "import" } = {}) {
+  if (!aiEnabled(task)) { const err = new Error("Serviço de IA não configurado no servidor."); err.code = "ai_disabled"; err.status = 501; throw err; }
+  const provider = providerFor(task);
+  const body = { model: provider.model(), temperature: temperature != null ? temperature : (json ? 0 : 0.3), max_tokens: maxTokens, messages };
   if (json) body.response_format = { type: "json_object" };
 
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     let res;
     try {
-      res = await fetch(GROQ_URL, {
+      res = await fetch(provider.url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.key()}` },
         body: JSON.stringify(body),
       });
     } catch (e) {
@@ -64,7 +97,7 @@ async function groqCompletion(messages, { json = false, maxTokens = 1024, temper
     if (res.status === 429 && tentativa === 0) { await sleep(2500); continue; } // rate limit: espera e tenta de novo
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
-      const err = new Error(`Serviço de IA retornou erro ${res.status}.`);
+      const err = new Error(`Serviço de IA (${provider.nome}) retornou erro ${res.status}.`);
       err.code = "ai_error"; err.status = res.status === 429 ? 429 : 502; err.detail = txt.slice(0, 300); throw err;
     }
     const data = await res.json();
@@ -74,13 +107,20 @@ async function groqCompletion(messages, { json = false, maxTokens = 1024, temper
   err.code = "ai_rate_limited"; err.status = 429; throw err;
 }
 
-// Uma chamada ao Groq com JSON mode para a leitura de fatura.
-async function chamarGroq(conteudo, refYear, refMonth) {
-  const raw = await groqCompletion(
+// Alguns modelos embrulham o JSON em ```json ... ``` mesmo com JSON mode.
+function limparJson(raw) {
+  const s = String(raw || "").trim();
+  const m = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return m ? m[1] : s;
+}
+
+// Uma chamada à IA com JSON mode para a leitura de fatura.
+async function chamarIA(conteudo, refYear, refMonth) {
+  const raw = await aiCompletion(
     [{ role: "system", content: systemPrompt(refYear, refMonth) }, { role: "user", content: `Texto da fatura:\n\n${conteudo}` }],
-    { json: true, maxTokens: 8000 }
+    { json: true, maxTokens: 8000, task: "import" }
   );
-  try { return JSON.parse(raw || "{}"); }
+  try { return JSON.parse(limparJson(raw) || "{}"); }
   catch { const err = new Error("A IA respondeu em formato inesperado."); err.code = "ai_bad_json"; err.status = 502; throw err; }
 }
 
@@ -119,6 +159,13 @@ function parseResposta(parsed) {
   return { compras, totalOficial, cartao };
 }
 
+// Troca os pseudônimos (PESSOA_n) de volta pelos nomes reais.
+function restaurarNomes(r, restaurar) {
+  r.compras.forEach((c) => { c.portador = restaurar(c.portador); c.descricao = restaurar(c.descricao); });
+  if (r.cartao) r.cartao.portadores.forEach((p) => { p.nome = restaurar(p.nome); });
+  return r;
+}
+
 // Divide a fatura em blocos ~maxChars, carregando o cabeçalho (vencimento/limite)
 // e o último "Cartão (final XXXX)" para cada bloco não perder o contexto.
 function dividirEmBlocos(texto, maxChars) {
@@ -142,8 +189,8 @@ function dividirEmBlocos(texto, maxChars) {
 
 // Extrai as compras da fatura via IA. Para faturas grandes, processa em blocos
 // e junta os resultados (evita cortar transações no limite de tokens).
-async function lerFaturaComIA({ texto, refYear, refMonth }) {
-  if (!aiEnabled()) {
+async function lerFaturaComIA({ texto, refYear, refMonth, nomesConhecidos = [] }) {
+  if (!aiEnabled("import")) {
     const err = new Error("Leitura com IA não configurada no servidor.");
     err.code = "ai_disabled"; err.status = 501; throw err;
   }
@@ -152,8 +199,12 @@ async function lerFaturaComIA({ texto, refYear, refMonth }) {
     err.code = "empty_text"; err.status = 400; throw err;
   }
 
+  // Dados pessoais nunca saem do servidor: mascara antes, restaura na resposta.
+  const mascara = mascararFatura(texto, { nomesConhecidos });
+  const textoIA = mascara.texto;
+
   const MAX_BLOCO = 11000; // ~caracteres por chamada
-  const blocos = texto.length <= 12000 ? [texto] : dividirEmBlocos(texto, MAX_BLOCO);
+  const blocos = textoIA.length <= 12000 ? [textoIA] : dividirEmBlocos(textoIA, MAX_BLOCO);
 
   const todas = [];
   let totalOficial = null;
@@ -161,8 +212,8 @@ async function lerFaturaComIA({ texto, refYear, refMonth }) {
   const portadoresSet = new Map();
 
   for (let i = 0; i < blocos.length; i++) {
-    const parsed = await chamarGroq(blocos[i], refYear, refMonth);
-    const r = parseResposta(parsed);
+    const parsed = await chamarIA(blocos[i], refYear, refMonth);
+    const r = restaurarNomes(parseResposta(parsed), mascara.restaurar);
     todas.push(...r.compras); // blocos são contíguos (sem sobreposição) → sem dedup
     if (totalOficial == null && r.totalOficial != null) totalOficial = r.totalOficial;
     if (!cartao && r.cartao && (r.cartao.banco || r.cartao.limite || r.cartao.vencimentoDia)) cartao = r.cartao;
@@ -174,4 +225,4 @@ async function lerFaturaComIA({ texto, refYear, refMonth }) {
   return { compras: todas, totalOficial, cartao, blocos: blocos.length };
 }
 
-module.exports = { lerFaturaComIA, aiEnabled, groqCompletion };
+module.exports = { lerFaturaComIA, aiEnabled, aiCompletion, providerFor };

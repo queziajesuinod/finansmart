@@ -2,6 +2,7 @@
 // referência; devolve as compras estruturadas. Fica atrás de requireAuth.
 const { lerFaturaComIA } = require("../services/aiImport");
 const { responderAssistente } = require("../services/aiAssistant");
+const { Membro } = require("../models");
 
 // Assistente financeiro: pergunta + resumo dos dados do usuário → resposta.
 async function assistant(req, res, next) {
@@ -26,8 +27,13 @@ async function aiImport(req, res, next) {
     const y = parseInt(refYear, 10);
     const m = parseInt(refMonth, 10);
     const agora = new Date();
+    // Nomes cadastrados (usuário, titular do household e familiares) para
+    // pseudonimizar antes de enviar o texto à IA.
+    const membros = await Membro.findAll({ where: { userId: req.dataOwnerId }, attributes: ["nome"] }).catch(() => []);
+    const nomesConhecidos = [req.user?.nome, req.dataOwner?.nome, ...membros.map((m) => m.nome)].filter(Boolean);
     const result = await lerFaturaComIA({
       texto,
+      nomesConhecidos,
       refYear: y >= 2000 && y <= 2100 ? y : agora.getFullYear(),
       refMonth: m >= 1 && m <= 12 ? m : agora.getMonth() + 1,
     });

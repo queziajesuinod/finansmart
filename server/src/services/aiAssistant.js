@@ -1,7 +1,8 @@
 // Assistente financeiro: responde perguntas do usuário usando um resumo dos
 // PRÓPRIOS dados dele (calculado no frontend e enviado como contexto). Usa a
-// Groq (mesma infra do importador). Nunca inventa números fora do resumo.
-const { groqCompletion } = require("./aiImport");
+// mesma infra do importador (provedor via AI_ASSISTANT_PROVIDER / AI_PROVIDER).
+// Nunca inventa números fora do resumo.
+const { aiCompletion } = require("./aiImport");
 
 const SYSTEM = `Você é o assistente financeiro do app "José Planeja". Responda SEMPRE em português do Brasil, de forma direta, prática e acolhedora.
 
@@ -23,7 +24,7 @@ async function responderAssistente({ pergunta, contexto, historico }) {
     .forEach((m) => messages.push({ role: m.role, content: m.content.slice(0, 1500) }));
   messages.push({ role: "user", content: pergunta });
 
-  const texto = await groqCompletion(messages, { json: false, maxTokens: 900, temperature: 0.4 });
+  const texto = await aiCompletion(messages, { json: false, maxTokens: 900, temperature: 0.4, task: "assistant" });
   return { resposta: (texto || "").trim() || "Não consegui responder agora. Tente reformular a pergunta." };
 }
 

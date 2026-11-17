@@ -21,7 +21,7 @@ What a generic budgeting app could not truthfully copy:
 
 - **Models Brazilian financial reality, not an abstract budget.** Cash regime: a credit-card invoice weighs on the month by what was actually *paid* (reconciled), a physical card carries a revolving balance, and installment purchases are de-duplicated against imported invoices so nothing is counted twice.
 - **Income is built from holerites (payslips) per member** plus per-member extra incomes — not a single manual salary field.
-- **AI-assisted invoice import that is regex-first**, with Groq AI only as reinforcement, chosen for privacy (does not train on user data).
+- **AI-assisted invoice import that is regex-first**, with AI only as reinforcement. Provider is configurable (`AI_PROVIDER`: Groq default, Gemini optional on a paid key), always one that does not train on user data.
 - **Family/multi-member by design:** principal + dependents, with subscription price scaling per dependent.
 
 ## Operating Context
