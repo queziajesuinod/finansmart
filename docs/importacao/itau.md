@@ -50,10 +50,26 @@ Compras parceladas - próximas faturas            ← daqui em diante, PARAR
 
 ## 2. O que o pdf.js devolve (e por que quebrava)
 
-1. **Duas colunas na mesma altura.** Uma linha visual traz uma compra da
-   esquerda e outra da direita. A extração detecta o layout (3+ datas `dd/mm`
-   na metade direita da página) e emite a coluna esquerda inteira e depois a
-   direita. Assim cada compra fica seguida da sua linha de categoria.
+1. **Duas colunas na mesma altura.** O Itaú imprime os lançamentos como um
+   jornal: desce a coluna esquerda e continua no topo da direita (o mesmo cartão
+   pode atravessar as duas colunas e as páginas). O pdf.js não sabe disso: ele
+   devolve o texto por **altura**, então uma linha visual traz uma compra da
+   esquerda e outra da direita (`01/10 LOJA A 10,00 06/10 LOJA C 30,00`), e as
+   linhas de categoria das duas ficam grudadas. Lido assim, o parser vê uma
+   compra só — com a descrição "LOJA A 10,00 06/10 LOJA C" — e a outra some.
+
+   Por isso a extração reconstrói a ordem de leitura: corta a página no início
+   da coluna direita e emite a **coluna esquerda inteira e depois a direita**.
+   Assim cada compra fica seguida da sua linha de categoria e o cabeçalho
+   `NOME (final X)` continua valendo para as compras que seguem na outra coluna.
+
+   A página é tratada como 2 colunas quando a metade direita tem **3+ datas
+   `dd/mm`** OU o **cabeçalho da coluna** (`Lançamentos: compras e saques`,
+   `DATA ESTABELECIMENTO`), que o Itaú repete no topo de cada coluna. O cabeçalho
+   cobre a última página, em que a coluna direita pode ter só 1–2 compras.
+   O corte fica 10 pt à esquerda da data/cabeçalho mais à esquerda da metade
+   direita. Uma data solta no meio da linha (ex.: parcela `10/12`) sem
+   cabeçalho não basta, para não partir faturas de uma coluna só.
 2. **Letras acentuadas em outra fonte.** O Itaú desenha `Í`, `Ç`, `Ã`… com uma
    fonte separada; o pdf.js devolve `VE` + `Í` + `CULOS` como fragmentos
    **encostados**. A extração antiga juntava todos os fragmentos com espaço e

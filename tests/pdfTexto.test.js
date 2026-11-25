@@ -37,6 +37,25 @@ test("duas colunas: emite a coluna esquerda inteira e depois a direita", () => {
   assert.equal(textoDaPagina(itens, 595), "01/10 LOJA A 10,00\n02/10 LOJA B 20,00\n05/10 LOJA C 30,00\n06/10 LOJA D 40,00\n07/10 LOJA E 50,00\n");
 });
 
+test("duas colunas com só 1 compra na direita (última página): usa o cabeçalho da coluna", () => {
+  const itens = [
+    frag("Lançamentos: compras e saques", 60, 420, 150), frag("Lançamentos: compras e saques", 360, 420, 150),
+    frag("01/10", 60, 400, 20), frag("LOJA A", 85, 400, 30), frag("10,00", 300, 400, 20),
+    frag("06/10", 360, 400, 20), frag("LOJA C", 385, 400, 30), frag("30,00", 540, 400, 20),
+    frag("02/10", 60, 380, 20), frag("LOJA B", 85, 380, 30), frag("20,00", 300, 380, 20),
+  ];
+  assert.equal(textoDaPagina(itens, 595),
+    "Lançamentos: compras e saques\n01/10 LOJA A 10,00\n02/10 LOJA B 20,00\nLançamentos: compras e saques\n06/10 LOJA C 30,00\n");
+});
+
+test("uma coluna com parcela solta no meio da linha não vira duas colunas", () => {
+  const itens = [
+    frag("01/10", 60, 400, 20), frag("LOJA A", 85, 400, 30), frag("10/12", 320, 400, 20), frag("10,00", 540, 400, 20),
+    frag("02/10", 60, 380, 20), frag("LOJA B", 85, 380, 30), frag("20,00", 540, 380, 20),
+  ];
+  assert.equal(textoDaPagina(itens, 595), "01/10 LOJA A 10/12 10,00\n02/10 LOJA B 20,00\n");
+});
+
 test("página sem texto devolve vazio", () => {
   assert.equal(textoDaPagina([frag("  ", 10, 10, 5)], 595), "");
 });

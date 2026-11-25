@@ -44,12 +44,29 @@ function agruparEmBandas(frags) {
   return bandas;
 }
 
-// Layout de 2 colunas (ex.: Itaú): há datas dd/mm na metade direita. Devolve o x
-// do corte entre as colunas, ou null para layout de uma coluna.
+// Cabeçalho que o Itaú repete no topo de CADA coluna de lançamentos.
+const RE_CABECALHO_COLUNA = /^(lan[çc]amentos|dataestabelecimento)/i;
+
+// Layout de 2 colunas (ex.: Itaú). Devolve o x do corte entre as colunas, ou null
+// para layout de uma coluna. Conta como 2 colunas quando a metade direita tem:
+//  - 3+ datas dd/mm (páginas cheias), OU
+//  - o cabeçalho da coluna ("Lançamentos: compras e saques", "DATA ESTABELECIMENTO").
+//    Cobre a última página, em que a coluna direita pode ter 1–2 compras: sem isso
+//    a compra da esquerda e a da direita viravam uma linha só e uma delas sumia.
+// Uma data solta no meio da linha (ex.: parcela "10/12") sem cabeçalho não basta.
 function corteDeColunas(bandas, larguraPagina) {
-  const xs = [];
-  bandas.forEach((b) => b.itens.forEach((it) => { if (/^\d{2}\/\d{2}$/.test(it.s) && it.x > larguraPagina * 0.5) xs.push(it.x); }));
-  return xs.length >= MIN_DATAS_DIREITA ? Math.min(...xs) - 10 : null;
+  const meio = larguraPagina * 0.5;
+  const xsDatas = [];
+  const xsCabecalho = [];
+  bandas.forEach((b) => {
+    const direita = b.itens.filter((it) => it.x > meio);
+    direita.forEach((it) => { if (/^\d{2}\/\d{2}$/.test(it.s)) xsDatas.push(it.x); });
+    if (direita.length && RE_CABECALHO_COLUNA.test(montarLinha(direita).replace(/\s+/g, ""))) {
+      xsCabecalho.push(Math.min(...direita.map((it) => it.x)));
+    }
+  });
+  if (xsDatas.length < MIN_DATAS_DIREITA && !xsCabecalho.length) return null;
+  return Math.min(...xsDatas, ...xsCabecalho) - 10;
 }
 
 /**
