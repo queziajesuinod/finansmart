@@ -353,16 +353,39 @@ function itauCategoria(linha) {
 function ehLinhaCategoriaItau(linha) {
   return /^(alimenta[çc]|ve[ií]culos|sa[úu]de|vestu[áa]rio|educa[çc]|turismo|hobby|lazer|moradia|diversos|servi[çc])/i.test(linha);
 }
+// O PDF do Itaú desenha as letras acentuadas com outra fonte, e o pdf.js as
+// devolve como fragmentos separados: a extração antiga juntava tudo com espaço
+// ("VE Í CULOS", "Lan ç amentos", "cart ã o"). Cola de volta um grupo de letras
+// acentuadas que está entre duas letras. Usado só no caminho do Itaú (o texto
+// colado pelo usuário pode ter vindo da extração antiga). Ver docs/importacao/itau.md.
+export function colarAcentosQuebrados(texto) {
+  return String(texto || "").replace(/([A-Za-zÀ-ÿ]) ([À-ÿ]+)(?: (?=[A-Za-zÀ-ÿ]))?/g, "$1$2");
+}
+
 // Detecta se o texto extraído é uma fatura do Itaú. A assinatura mais forte é a
 // linha de categoria com ponto (ex: "VEÍCULOS .CAMPO GRANDE"), exclusiva do Itaú,
 // junto do cabeçalho "VALOR EM R$".
 export function pareceItau(texto) {
-  const t = texto || "";
+  const t = colarAcentosQuebrados(texto || "");
   const temCategorias = (t.match(/^(alimenta[çc][ãa]o|ve[ií]culos|vestu[áa]rio|sa[úu]de|educa[çc][ãa]o|turismo|diversos)\s*\./gim) || []).length;
   return /valor\s+em\s+r\$/i.test(t) && temCategorias >= 3;
 }
 
-function parseItau(texto, year, monthIdx) {
+// Itaú: o pagamento da fatura anterior aparece só no resumo da 1ª página como
+// "Pagamento efetuado em 21/09/2026 - 20.277,46" — a data não abre a linha e a
+// linha costuma vir colada ao endereço (coluna vizinha), então o extrator
+// genérico não pega. Valor sempre positivo (é o que foi pago).
+function pagamentosItau(texto) {
+  const re = /pagamento\s+efetuado\s+em\s+(\d{2})\/(\d{2})\/(\d{4})\s*-?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/gi;
+  return [...String(texto || "").matchAll(re)].map((m) => ({
+    data: `${m[3]}-${m[2]}-${m[1]}`,
+    valor: parseFloat(m[4].replace(/\./g, "").replace(",", ".")),
+    descricao: "Pagamento",
+  }));
+}
+
+function parseItau(textoOriginal, year, monthIdx) {
+  const texto = colarAcentosQuebrados(textoOriginal);
   // Mês/ano de referência: prioriza o vencimento impresso na fatura.
   let refYear = year, refMonth = monthIdx + 1;
   const mv = texto.match(/vencimento[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/i);
@@ -386,8 +409,15 @@ function parseItau(texto, year, monthIdx) {
     if (/comprasparceladas-?pr[oó]ximas|^simula[çc][aã]o|limitesdecr[eé]dito|limitedecr[eé]dito|encargoscobrados|novotetodejuros|demaistaxasdejuros|totalparapr[oó]ximas|^demaisfaturas/i.test(ne)) parar = true;
     if (parar) continue;
 
-    // Cabeçalhos "Lançamentos: ...". Detecta a seção de produtos/serviços.
-    if (/^lan[çc]amentos/i.test(l)) { emProdutos = /produtoseservi[çc]os/i.test(ne); continue; }
+    // Cabeçalhos "Lançamentos: ..." e subtotais "Lançamentos no cartão (final X)".
+    // Testa sem espaços (ne) e ANTES do cabeçalho de cartão: senão o subtotal casa
+    // com "(final X)" e vira um portador falso. Produtos/serviços (anuidade, SMS)
+    // são da conta, não de um cartão: ganham um grupo próprio.
+    if (/^lan[çc]amentos/i.test(ne)) {
+      emProdutos = /produtoseservi[çc]os/i.test(ne);
+      if (emProdutos) { portador = "Produtos e Serviços"; final = "svc"; }
+      continue;
+    }
 
     // Cabeçalho de cartão: "FULANO (final 1796)".
     const mf = l.match(reFinal);
@@ -424,10 +454,12 @@ function parseItau(texto, year, monthIdx) {
     // a seção de produtos/serviços (evita virar parcelado a anuidade).
     const parc = emProdutos ? { parcelaAtual: 1, parcelas: 1 } : detectaParcela(raw);
 
-    // Descrição limpa: remove a parcela colada e a cidade no fim.
+    // Descrição limpa: remove a parcela do fim. A letra antes da parcela só é
+    // marcador quando vem separada por espaço (" L06/08", " C04/05"); colada ao
+    // nome ela é a última letra dele ("SHOES03/05" → "SHOES", não "SHOE").
     let desc = raw
-      .replace(/\s*[A-Za-z]?\d{2,}\s*\/\s*\d{2}\s*$/, "")   // "L02/08", "SFAUT02/03"
-      .replace(/\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/, "")          // "02/06"
+      .replace(/\s+[A-Za-z]\d{2}\s*\/\s*\d{2}\s*$/, "")     // " L06/08", " C04/05"
+      .replace(/\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/, "")          // "SHOES03/05", " 06/06"
       .replace(/\s{2,}/g, " ")
       .trim() || raw;
     if (!categoria) categoria = autoCategoria(desc);
@@ -457,7 +489,7 @@ export function parseFatura(texto, year, monthIdx) {
   // Itaú tem layout próprio (2 colunas + categoria impressa): parser dedicado.
   if (pareceItau(texto)) {
     const itau = parseItau(texto, year, monthIdx);
-    if (itau.length >= 2) { itau.totalOficial = null; return itau; }
+    if (itau.length >= 2) { itau.totalOficial = null; itau.pagamentos = pagamentosItau(texto); return itau; }
   }
 
   // Parser estruturado (CAIXA), com fallback de remontagem de linhas.

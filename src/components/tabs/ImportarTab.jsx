@@ -4,6 +4,7 @@ import { C, CATEGORIES, MONTH_NAMES, todayStr, fmt, genId, tint, addMonths, mont
 import { primeiraParcelaCartao } from "../../lib/finance";
 import { Card, Field, Inp, Sel, Btn, STitle, IcoTxt, MoneyInput } from "../ui";
 import { parseFatura, aplicarRegras, merchantKey, autoCategoria } from "../../lib/parseFatura";
+import { textoDaPagina } from "../../lib/pdfTexto";
 import { authConfig, aiImportFatura, getPlans, saveImportLog } from "../../lib/api";
 import { Trash2, FilePlus, ScrollText, Search, Lightbulb, FileText, Calendar, Users, User, CreditCard, ArrowLeftRight, RefreshCw, CircleCheck, TriangleAlert, Sparkles } from "../../lib/icons.jsx";
 import { membrosOrdenados, principalId, principalDe } from "../Membros.jsx";
@@ -334,49 +335,13 @@ export default function ImportarTab({ setDespesasMk, year, monthIdx, cartoes, se
       const buf = await file.arrayBuffer();
       const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
       let fullText = "";
+      // Monta o texto página a página (linhas, 2 colunas, letras acentuadas
+      // encostadas) — ver src/lib/pdfTexto.js e docs/importacao/itau.md.
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
-        const vp = page.getViewport({ scale: 1 });
-        const W = vp.width || 600;
+        const largura = page.getViewport({ scale: 1 }).width || 600;
         const content = await page.getTextContent();
-        const frags = content.items
-          .filter((it) => it.str && it.str.trim())
-          .map((it) => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim() }));
-        if (!frags.length) continue;
-
-        frags.sort((a, b) => b.y - a.y || a.x - b.x);
-        const bandas = [];
-        const TOL = 2.5;
-        frags.forEach((frag) => {
-          const b = bandas.find((l) => Math.abs(l.y - frag.y) <= TOL);
-          if (b) { b.itens.push(frag); }
-          else bandas.push({ y: frag.y, itens: [frag] });
-        });
-
-        const montar = (arr) => arr.slice().sort((a, b2) => a.x - b2.x).map((o) => o.s).join(" ").replace(/\s{2,}/g, " ").trim();
-
-        // Detecta layout de 2 colunas (ex: Itaú): datas dd/mm na metade direita.
-        const reTokenData = /^\d{2}\/\d{2}$/;
-        const xDatasDir = [];
-        bandas.forEach((b) => b.itens.forEach((it) => { if (reTokenData.test(it.s) && it.x > W * 0.5) xDatasDir.push(it.x); }));
-        const duasColunas = xDatasDir.length >= 3;
-        const corte = duasColunas ? Math.min.apply(null, xDatasDir) - 10 : null;
-
-        if (duasColunas) {
-          // Emite a COLUNA ESQUERDA inteira (de cima p/ baixo) e depois a DIREITA.
-          // Assim cada compra fica seguida da sua própria linha de categoria —
-          // essencial para faturas onde a categoria vem abaixo (Itaú).
-          const esqLinhas = [], dirLinhas = [];
-          bandas.forEach((b) => {
-            const tE = montar(b.itens.filter((it) => it.x < corte));
-            const tD = montar(b.itens.filter((it) => it.x >= corte));
-            if (tE) esqLinhas.push(tE);
-            if (tD) dirLinhas.push(tD);
-          });
-          fullText += esqLinhas.join("\n") + "\n" + dirLinhas.join("\n") + "\n";
-        } else {
-          bandas.forEach((b) => { const t = montar(b.itens); if (t) fullText += t + "\n"; });
-        }
+        fullText += textoDaPagina(content.items, largura);
       }
       if (!fullText.trim()) { diz("O PDF não tem texto selecionável (parece ser uma imagem escaneada). Tente enviar o PDF original gerado pelo app/site do banco, ou digite as compras na opção \"Colar texto\".", "warn"); setLoading(false); e.target.value = ""; return; }
 
